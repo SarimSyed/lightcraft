@@ -77,6 +77,79 @@ fn click_widget(h: &mut Headless, id: &str, count: u64) {
 
 const S_CURVE: [[f64; 2]; 4] = [[0.0, 0.0], [0.25, 0.15], [0.75, 0.85], [1.0, 1.0]];
 
+fn default_chart() -> Headless {
+    let app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services::default());
+    let mut h = Headless::new(app, [1200.0, 1400.0], 1.0);
+    exec(&mut h, "library.select", json!({"ids": [1], "active": 1}));
+    let r = h.request("ui.set", json!({"view": "detail", "right": "edit", "openSections": ["light"], "openFlyouts": ["curve"]}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h
+}
+
+#[test]
+fn default_curve_chart_drag_adjusts_its_region_with_one_undo() {
+    let mut h = default_chart();
+    let before = exec(&mut h, "develop.get", json!({}));
+    let side = curve_side(&mut h);
+    // The default parametric chart: raise the Lights region directly on the diagonal.
+    let r = h.request("ui.dragWidget", json!({"id": "curve", "fx": 0.625, "fy": 0.375, "dy": -0.2 * side, "steps": 12}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let after = exec(&mut h, "develop.get", json!({}));
+    assert!(after["curve"]["lights"].as_f64().unwrap() > 0.0, "drag must raise Lights: {}", after["curve"]);
+    for region in ["shadows", "darks", "highlights", "master", "red", "green", "blue"] {
+        assert_eq!(after["curve"][region], before["curve"][region], "only the grabbed region changes: {region}");
+    }
+    exec(&mut h, "edit.undo", json!({}));
+    assert_eq!(exec(&mut h, "develop.get", json!({}))["curve"], before["curve"], "one undo restores the entire drag");
+}
+
+#[test]
+fn parametric_chart_uses_custom_splits_keeps_the_grabbed_region_and_clamps() {
+    let mut h = default_chart();
+    for (control, value) in [("curve.splitShadows", 10), ("curve.splitMid", 30), ("curve.splitHighlights", 60), ("curve.highlights", 17)] {
+        exec(&mut h, "develop.set", json!({"control": control, "value": value}));
+    }
+    let side = curve_side(&mut h);
+    // x=.45 is Lights with these splits. Crossing into Highlights must keep editing Lights.
+    let r = h.request("ui.dragWidget", json!({"id": "curve", "fx": 0.45, "fy": 0.55, "dx": 0.5 * side, "dy": 1.5 * side, "steps": 12}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let curve = exec(&mut h, "develop.get", json!({}))["curve"].clone();
+    assert_eq!(curve["lights"], -100.0, "downward drag is bounded at the slider minimum");
+    assert_eq!(curve["highlights"], 17.0, "the neighbouring region stays intact");
+    assert_eq!(curve["shadows"], 0.0);
+    assert_eq!(curve["darks"], 0.0);
+    let r = h.request("ui.dragWidget", json!({"id": "curve", "fx": 0.8, "fy": 0.2, "dy": -0.2 * side, "steps": 12}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert!(exec(&mut h, "develop.get", json!({}))["curve"]["highlights"].as_f64().unwrap() > 17.0, "next drag picks a new region");
+    exec(&mut h, "edit.undo", json!({}));
+    assert_eq!(exec(&mut h, "develop.get", json!({}))["curve"], curve, "each drag has its own undo step");
+}
+
+#[test]
+fn white_circle_enables_creating_and_dragging_curve_points() {
+    let mut h = default_chart();
+    let before = exec(&mut h, "develop.get", json!({}))["curve"].clone();
+    click_widget(&mut h, "curveChannel:master", 1);
+    let r = h.request("ui.clickWidget", json!({"id": "curve", "fx": 0.5, "fy": 0.3}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let created = exec(&mut h, "develop.get", json!({}))["curve"].clone();
+    let point = &created["master"][1];
+    assert_eq!(created["master"].as_array().unwrap().len(), 3, "click creates a point between the endpoints");
+    assert!((point["x"].as_f64().unwrap() - 0.5).abs() < 0.01);
+    assert!((point["y"].as_f64().unwrap() - 0.7).abs() < 0.01);
+    let side = curve_side(&mut h);
+    let r = h.request("ui.dragWidget", json!({"id": "curve", "fx": 0.5, "fy": 0.3, "dx": -0.1 * side, "dy": -0.1 * side, "steps": 12}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let moved = exec(&mut h, "develop.get", json!({}))["curve"].clone();
+    assert_eq!(moved["master"].as_array().unwrap().len(), 3);
+    assert!((moved["master"][1]["x"].as_f64().unwrap() - 0.4).abs() < 0.03);
+    assert!((moved["master"][1]["y"].as_f64().unwrap() - 0.8).abs() < 0.03);
+    exec(&mut h, "edit.undo", json!({}));
+    assert_eq!(exec(&mut h, "develop.get", json!({}))["curve"], created);
+    exec(&mut h, "edit.undo", json!({}));
+    assert_eq!(exec(&mut h, "develop.get", json!({}))["curve"], before);
+}
+
 #[test]
 fn double_clicking_a_channel_resets_only_that_channel() {
     let mut h = curve_open("master");

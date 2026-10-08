@@ -1266,5 +1266,7 @@
   "Smooth larger colour-noise patches.": "Suaviza manchas maiores de ruído de cor.",
   "Evaluate noise reduction at 100% zoom.": "Avalie a redução de ruído com zoom de 100%.",
   "Enable luminance noise reduction to adjust this control.": "Ative a redução de ruído de luminância para ajustar este controle.",
-  "Enable colour noise reduction to adjust this control.": "Ative a redução de ruído de cor para ajustar este controle."
+  "Enable colour noise reduction to adjust this control.": "Ative a redução de ruído de cor para ajustar este controle.",
+  "Drag up or down to adjust this tonal region. Select the white circle to add curve points.": "Arraste para cima ou para baixo para ajustar esta região tonal. Selecione o círculo branco para adicionar pontos à curva.",
+  "Click to add points; drag to move them. Double-click a point to remove it.": "Clique para adicionar pontos e arraste para movê-los. Clique duas vezes em um ponto para removê-lo."
 }

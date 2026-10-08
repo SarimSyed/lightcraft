@@ -1255,5 +1255,7 @@
   "Smooth larger colour-noise patches.": "平滑较大的彩色噪点区域。",
   "Evaluate noise reduction at 100% zoom.": "请在 100% 缩放下评估降噪效果。",
   "Enable luminance noise reduction to adjust this control.": "启用亮度降噪后即可调整此控件。",
-  "Enable colour noise reduction to adjust this control.": "启用色彩降噪后即可调整此控件。"
+  "Enable colour noise reduction to adjust this control.": "启用色彩降噪后即可调整此控件。",
+  "Drag up or down to adjust this tonal region. Select the white circle to add curve points.": "向上或向下拖动以调整此色调区域。选择白色圆圈以添加曲线控制点。",
+  "Click to add points; drag to move them. Double-click a point to remove it.": "单击添加控制点，拖动移动控制点。双击控制点以移除。"
 }

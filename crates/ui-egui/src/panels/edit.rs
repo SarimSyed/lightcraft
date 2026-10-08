@@ -619,7 +619,16 @@ fn curve_editor(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, d: &Dev
                     "green" => "Green channel",
                     _ => "Blue channel",
                 };
-                let resp = resp.on_hover_text(crate::i18n::tr_format!("{name} — double-click to reset it", name = name));
+                let mut help = crate::i18n::tr_format!("{name} — double-click to reset it", name = crate::i18n::tr(name));
+                if ch == "parametric" {
+                    help.push_str(&format!(
+                        "\n{}",
+                        crate::i18n::tr("Drag up or down to adjust this tonal region. Select the white circle to add curve points.")
+                    ));
+                } else {
+                    help.push_str(&format!("\n{}", crate::i18n::tr("Click to add points; drag to move them. Double-click a point to remove it.")));
+                }
+                let resp = resp.on_hover_text(help);
                 if resp.double_clicked() {
                     app.ui.curve_channel = ch.into();
                     let _ = app.run("curve.reset", json!({"channel": ch}));
@@ -678,6 +687,46 @@ fn curve_editor(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, d: &Dev
             })
             .collect();
         p.add(egui::Shape::line(pts, Stroke::new(2.0, Color32::from_gray(220))));
+        // Hold the region and starting value for the whole gesture, just like a slider.
+        let drag_id = egui::Id::new("parametric-curve-drag");
+        let mut drag = ui.data(|dd| dd.get_temp::<Option<(&'static str, f64, f32)>>(drag_id)).flatten();
+        if resp.drag_started()
+            && let Some(q) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos())
+        {
+            let x = from_screen(q).0 * 100.0;
+            let control = if x < c.split_shadows {
+                "curve.shadows"
+            } else if x < c.split_mid {
+                "curve.darks"
+            } else if x < c.split_highlights {
+                "curve.lights"
+            } else {
+                "curve.highlights"
+            };
+            drag = Some((control, controls::get(d, control).unwrap_or(0.0), q.y));
+        }
+        if let Some((control, initial, start_y)) = drag
+            && let Some(spec) = controls::find(control)
+        {
+            let value = resp
+                .interact_pointer_pos()
+                .filter(|_| resp.dragged() || resp.drag_started())
+                .map(|q| (initial + (start_y - q.y) as f64 / r.height() as f64 * (spec.max - spec.min)).round().clamp(spec.min, spec.max));
+            apply_slider_out(
+                app,
+                spec,
+                SliderOut { value, drag_started: resp.drag_started(), drag_stopped: resp.drag_stopped(), reset: false },
+                |app, v| app.run("develop.set", json!({"control": control, "value": v})),
+            );
+        }
+        if resp.drag_stopped() {
+            drag = None;
+        }
+        ui.data_mut(|dd| dd.insert_temp(drag_id, drag));
+        if resp.hovered() || resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeVertical);
+        }
+        resp.on_hover_text(crate::i18n::tr("Drag up or down to adjust this tonal region. Select the white circle to add curve points."));
         curve_footer(app, ui, d);
         for c in ["curve.highlights", "curve.lights", "curve.darks", "curve.shadows"] {
             control(app, ui, d, c, true);
@@ -799,6 +848,7 @@ fn curve_editor(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, d: &Dev
         let _ = app.run("develop.endInteraction", json!({}));
     }
     ui.data_mut(|dd| dd.insert_temp(drag_id, dragging));
+    resp.on_hover_text(crate::i18n::tr("Click to add points; drag to move them. Double-click a point to remove it."));
     curve_footer(app, ui, d);
     control(app, ui, d, "curve.refineSaturation", true);
     let _ = id;

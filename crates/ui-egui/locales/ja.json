@@ -1038,5 +1038,7 @@
   "Smooth larger colour-noise patches.": "大きな色ノイズの斑点を滑らかにします。",
   "Evaluate noise reduction at 100% zoom.": "ノイズ軽減の効果は100%表示で確認してください。",
   "Enable luminance noise reduction to adjust this control.": "このコントロールを調整するには、輝度ノイズ軽減を有効にしてください。",
-  "Enable colour noise reduction to adjust this control.": "このコントロールを調整するには、カラーノイズ軽減を有効にしてください。"
+  "Enable colour noise reduction to adjust this control.": "このコントロールを調整するには、カラーノイズ軽減を有効にしてください。",
+  "Drag up or down to adjust this tonal region. Select the white circle to add curve points.": "上下にドラッグして、この階調域を調整します。白い丸を選択すると、カーブにポイントを追加できます。",
+  "Click to add points; drag to move them. Double-click a point to remove it.": "クリックしてポイントを追加し、ドラッグして移動します。ポイントをダブルクリックすると削除できます。"
 }

@@ -95,7 +95,9 @@ resolution-independent film **Grain** with size and roughness.
 
 ### 📈 Tone Curve
 Parametric region curve with movable splits **plus** point curves for RGB, Red, Green and Blue. Curves are monotone by
-construction, so you never get an accidental tone inversion.
+construction, so you never get an accidental tone inversion. In Curve, the first icon edits tonal regions: drag the
+graph up/down or use the sliders. Select the white circle to add and drag control points; coloured circles edit
+individual channels.
 
 </td>
 </tr>
