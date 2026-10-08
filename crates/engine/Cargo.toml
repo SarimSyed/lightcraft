@@ -31,10 +31,18 @@ thiserror = { workspace = true }
 log = { workspace = true }
 ab_glyph = { workspace = true }
 lightcraft-segment = { workspace = true, optional = true }
+lightcraft-denoise.workspace = true
+sha2 = "0.10"
+tiff.workspace = true
+bytemuck.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+lightcraft-fetch.workspace = true
 
 [features]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
 sam = ["dep:lightcraft-segment"]
+reference-validation = ["lightcraft-denoise/reference-validation"]
 
 [dev-dependencies]
 libc = { workspace = true }

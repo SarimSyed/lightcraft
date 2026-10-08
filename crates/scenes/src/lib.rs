@@ -70,6 +70,8 @@ impl Scene {
 
     /// Render fitting within `max_edge` on the long side.
     pub fn render_fit(&self, max_edge: usize) -> Rgb32f {
+        // Full-source jobs use usize::MAX as "native resolution", never as an allocation size.
+        let max_edge = max_edge.min(self.width.max(self.height).max(1) as usize);
         let a = self.aspect();
         let (w, h) = if a >= 1.0 { (max_edge, (max_edge as f32 / a).round() as usize) } else { ((max_edge as f32 * a).round() as usize, max_edge) };
         self.render(w.max(1), h.max(1))

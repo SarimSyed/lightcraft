@@ -80,12 +80,20 @@ fn a_failing_download_ends_with_an_error_and_never_blocks() {
     // a local mirror that has nothing
     let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}/sam3", l.local_addr().unwrap());
+    // Hold the first response until the second command has observed an in-flight download.
+    // A fast 404 can otherwise finish before that command, which legitimately starts a retry.
+    let (release, response_gate) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
+        let mut first = true;
         for mut c in l.incoming().flatten() {
             let mut r = BufReader::new(c.try_clone().unwrap());
             let mut line = String::new();
             while r.read_line(&mut line).unwrap_or(0) > 2 {
                 line.clear();
+            }
+            if first {
+                let _ = response_gate.recv_timeout(Duration::from_secs(30));
+                first = false;
             }
             let _ = c.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 13\r\nConnection: close\r\n\r\n<h1>404</h1>\n");
         }
@@ -103,6 +111,7 @@ fn a_failing_download_ends_with_an_error_and_never_blocks() {
     // a second request while it runs starts nothing
     let again = s.execute("segment.model.download", &json!({"acknowledged": true})).unwrap();
     assert!(again["started"] == false || again["downloading"] == false);
+    release.send(()).unwrap();
     let t = Instant::now();
     while s.segmenter.download_status().running {
         assert!(t.elapsed() < Duration::from_secs(30), "the download never ended");

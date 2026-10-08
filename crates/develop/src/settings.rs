@@ -909,10 +909,19 @@ pub struct LensBlur {
     pub focal_range: f64,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DenoiseModel {
+    pub id: String,
+    pub checkpoint: String,
+    pub processing_revision: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Enhance {
     pub denoise: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<DenoiseModel>,
     pub raw_details: bool,
     pub super_resolution: bool,
 }

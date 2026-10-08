@@ -61,6 +61,10 @@ pub const ABOUT_TABS: &[(&str, &str)] = &[("about", "About"), ("contributors", "
 pub const WHATS_NEW: &str = include_str!("../../../../docs/whats-new.md");
 
 pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
+    if matches!(app.ui.dialog, Some(Dialog::Denoise { .. })) {
+        super::denoise::show(app, ctx);
+        return;
+    }
     let Some(mut dlg) = app.ui.dialog.clone() else { return };
     let t = Tokens::get(ctx);
     let screen = ctx.content_rect();
@@ -98,6 +102,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
         Dialog::Settings { .. } => "Settings",
         Dialog::ConfirmDelete { .. } => "Delete Photos",
         Dialog::SamModel { .. } => "Download the SAM 3 Model?",
+        Dialog::Denoise { .. } => "AI Denoise",
         Dialog::About => "About LightCraft",
         Dialog::Shortcuts => "Keyboard Shortcuts",
     }
@@ -117,6 +122,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
             match &mut dlg {
+                Dialog::Denoise { .. } => {},
                 Dialog::AutoStack { gap } => {
                     ui.label(egui::RichText::new(crate::i18n::tr("Stack photos taken within this time of each other:")).color(t.text_label));
                     ui.add(
@@ -883,7 +889,7 @@ pub fn fmt_gap(v: f64) -> String {
 /// Whether a dialog stays open after its action succeeded (the SAM 3 dialog while the model
 /// downloads).
 pub fn keeps_open(app: &LightcraftApp, dlg: &Dialog) -> bool {
-    matches!(dlg, Dialog::SamModel { .. }) && !app.session.segmenter.installed()
+    matches!(dlg, Dialog::Denoise { .. }) || (matches!(dlg, Dialog::SamModel { .. }) && !app.session.segmenter.installed())
 }
 
 /// The SAM 3 dialog: what the model is, its size and licence, and the download's progress.
@@ -946,6 +952,12 @@ fn sam_model_body(app: &mut LightcraftApp, ui: &mut egui::Ui, error: Option<&str
 
 pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_json::Value, String> {
     match dlg {
+        Dialog::Denoise { photo, amount } => {
+            if app.session.enhancer.preview.is_none() {
+                return Err("Prepare the AI denoise preview before applying".into());
+            }
+            app.run("enhance.denoise.apply", json!({"photo":photo,"amount":amount,"wait":false}))
+        }
         Dialog::SamModel { then, .. } => {
             if app.session.segmenter.installed() {
                 // installed: start what the user was doing

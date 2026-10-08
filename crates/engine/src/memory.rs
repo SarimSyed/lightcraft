@@ -221,6 +221,8 @@ pub struct MemoryReport {
     pub full_source: Usage,
     /// Rendered thumbnails and view renders (8-bit) in memory.
     pub rendered: Usage,
+    /// Retained AI originals, full-strength results and crop previews.
+    pub enhancements: Usage,
     /// Sum of the above.
     pub engine_bytes: usize,
     pub gpu: GpuUsage,
@@ -276,12 +278,14 @@ impl crate::Session {
         let (thumb_sources, preview_sources, full_source) = self.media.usage();
         let (n, b) = self.media.rendered.mem_usage();
         let rendered = Usage::new(n, b);
+        let enhancements = self.enhancer.usage();
         MemoryReport {
             thumb_sources,
             preview_sources,
             full_source,
             rendered,
-            engine_bytes: thumb_sources.bytes + preview_sources.bytes + full_source.bytes + rendered.bytes,
+            enhancements,
+            engine_bytes: thumb_sources.bytes + preview_sources.bytes + full_source.bytes + rendered.bytes + enhancements.bytes,
             gpu: gpu_usage(),
             budget: budget(),
             cache_budget: self.media.budget(),

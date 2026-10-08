@@ -1268,5 +1268,22 @@
   "Enable luminance noise reduction to adjust this control.": "Ative a redução de ruído de luminância para ajustar este controle.",
   "Enable colour noise reduction to adjust this control.": "Ative a redução de ruído de cor para ajustar este controle.",
   "Drag up or down to adjust this tonal region. Select the white circle to add curve points.": "Arraste para cima ou para baixo para ajustar esta região tonal. Selecione o círculo branco para adicionar pontos à curva.",
-  "Click to add points; drag to move them. Double-click a point to remove it.": "Clique para adicionar pontos e arraste para movê-los. Clique duas vezes em um ponto para removê-lo."
+  "Click to add points; drag to move them. Double-click a point to remove it.": "Clique para adicionar pontos e arraste para movê-los. Clique duas vezes em um ponto para removê-lo.",
+  "AI Denoise": "Redução de ruído com IA",
+  "AI Denoise…": "Redução de ruído com IA…",
+  "Edit AI Denoise…": "Editar redução de ruído com IA…",
+  "Install NAFNet to prepare the preview.": "Instale o NAFNet para preparar a prévia.",
+  "Model size: 116.7 MB. Inference runs locally.": "Tamanho do modelo: 116,7 MB. O processamento é local.",
+  "Model licence and notices": "Licença e avisos do modelo",
+  "Download is awaiting checkpoint redistribution approval. Offline installation is available.": "O download aguarda permissão para redistribuir os pesos. A instalação offline está disponível.",
+  "See docs/denoise.md for verified offline installation.": "Veja docs/denoise.md para a instalação offline verificada.",
+  "Download Model": "Baixar modelo",
+  "Check Installation": "Verificar instalação",
+  "Hold Before": "Segure para ver Antes",
+  "100% preview · Hold Before or Space to compare": "Prévia de 100% · Segure Antes ou Espaço para comparar",
+  "Preparing preview…": "Preparando prévia…",
+  "Processing AI Denoise…": "Processando redução de ruído com IA…",
+  "Metal was unavailable. Processing completed on CPU.": "O Metal estava indisponível. O processamento foi concluído na CPU.",
+  "Prepare Preview": "Preparar prévia",
+  "Apply": "Aplicar"
 }

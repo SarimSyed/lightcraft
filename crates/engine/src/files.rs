@@ -214,6 +214,32 @@ pub fn load_vec(bytes: Vec<u8>, max_edge: usize) -> Result<(Rgb32f, SourceInfo),
     rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge))
 }
 
+/// Native enhancement preflight bounds allocations before decoding the full-resolution source.
+pub fn load_enhancement(path: &str) -> Result<(Rgb32f, SourceInfo), String> {
+    use std::io::Read;
+    let file = std::fs::File::open(path).map_err(|e| format!("{path}: {e}"))?;
+    const MAX_FILE: u64 = 512 << 20;
+    if file.metadata().map_err(|e| e.to_string())?.len() > MAX_FILE {
+        return Err("enhancement source exceeds 512 MiB".into());
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_FILE + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_FILE {
+        return Err("enhancement source grew beyond 512 MiB".into());
+    }
+    let info = probe_bytes(path, &bytes)?;
+    if (info.width as usize).checked_mul(info.height as usize).is_none_or(|n| n == 0 || n > lightcraft_denoise::MAX_PIXELS)
+        || info.width > 32768
+        || info.height > 32768
+    {
+        return Err("enhancement source exceeds 100 megapixels or 32768 pixels per edge".into());
+    }
+    if info.kind == MediaKind::Raw && info.preview_only.is_some() {
+        return Err("AI denoise requires a fully decoded RAW; this camera currently opens as an embedded preview".into());
+    }
+    load_vec(bytes, usize::MAX)
+}
+
 fn load_bytes_now(bytes: std::borrow::Cow<'_, [u8]>, max_edge: usize) -> Result<(Rgb32f, SourceInfo), String> {
     if lightcraft_raw::probe(&bytes).is_some() {
         let mut raw = match lightcraft_raw::decode(&bytes) {

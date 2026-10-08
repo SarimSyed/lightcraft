@@ -12,6 +12,7 @@ mod cull;
 pub mod curves;
 mod develop;
 mod edit;
+mod enhance;
 mod export;
 pub mod filters;
 pub mod keywords;
@@ -116,6 +117,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
     SPECS.get_or_init(|| {
         let mut v = Vec::new();
         v.extend(edit::specs());
+        v.extend(enhance::specs());
         v.extend(library::specs());
         v.extend(develop::specs());
         v.extend(color::specs());

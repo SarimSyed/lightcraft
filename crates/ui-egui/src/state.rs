@@ -529,6 +529,10 @@ pub enum Dialog {
         #[serde(default)]
         error: Option<String>,
     },
+    Denoise {
+        photo: u64,
+        amount: f64,
+    },
     /// Confirm moving photos to Recently Deleted.
     ConfirmDelete {
         count: usize,

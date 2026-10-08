@@ -447,6 +447,7 @@ impl MediaCache {
 /// Everything needed to render one photo, detached from the session.
 #[derive(Clone)]
 pub struct RenderJob {
+    pub enhancement: Option<crate::enhance::SourceResolver>,
     /// Assigned by a frontend to distinguish late completions, even for an identical render key.
     pub request_id: u64,
     pub cache_generation: u64,
@@ -531,7 +532,8 @@ impl RenderJob {
     }
 
     pub fn run(self) -> RenderResult {
-        if let Some((cache, key)) = &self.cache
+        if self.settings.enhance.model.is_none()
+            && let Some((cache, key)) = &self.cache
             && let Some(img) = cache.get_at(self.cache_generation, *key)
         {
             let image = Arc::unwrap_or_clone(img);
@@ -548,7 +550,16 @@ impl RenderJob {
             };
         }
         let was_loaded = matches!(self.source, SourceRef::Loaded(_));
-        match self.source.load_source() {
+        let enhancing = self.settings.enhance.model.is_some() && self.settings.enhance.denoise != 0.0;
+        let source = if enhancing {
+            self.enhancement
+                .as_ref()
+                .ok_or_else(|| "AI denoise source resolver unavailable; use the engine render/export job".to_string())
+                .and_then(|resolver| resolver.resolve(&self.settings))
+        } else {
+            self.source.load_source()
+        };
+        match source {
             Ok(source) => {
                 let src = &source.image;
                 let info = source.info_or(self.info);
@@ -571,7 +582,7 @@ impl RenderJob {
                     level: self.level,
                     key: self.key,
                     rendered: Ok(rendered),
-                    loaded: (!was_loaded).then_some(source),
+                    loaded: (!was_loaded && !enhancing).then_some(source),
                     quick: None,
                 }
             }
@@ -748,6 +759,7 @@ impl crate::Session {
             (self.media.rendered.clone(), k)
         });
         Some(RenderJob {
+            enhancement: Some(self.enhancement_source(&p)),
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
             source_key: Some(source_key),
@@ -798,6 +810,7 @@ impl crate::Session {
         let source = self.media.source_ref(&p, level);
         let ck = Self::variant_key(&p, settings, edge);
         Some(RenderJob {
+            enhancement: Some(self.enhancement_source(&p)),
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
             source_key: Some(Hasher128::new().str(&content_key(&p)).finish()),
@@ -843,6 +856,7 @@ impl crate::Session {
         let source = self.media.source_ref(&p, level);
         let ck = Self::variant_key(&p, &settings, edge);
         Some(RenderJob {
+            enhancement: Some(self.enhancement_source(&p)),
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
             source_key: Some(Hasher128::new().str(&content_key(&p)).finish()),

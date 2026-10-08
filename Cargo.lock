@@ -2860,6 +2860,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightcraft-denoise"
+version = "0.4.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "lightcraft-color",
+ "lightcraft-raster",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "lightcraft-develop"
 version = "0.4.0"
 dependencies = [
@@ -2876,11 +2890,14 @@ name = "lightcraft-engine"
 version = "0.4.0"
 dependencies = [
  "ab_glyph",
+ "bytemuck",
  "libc",
  "lightcraft-catalog",
  "lightcraft-codecs",
  "lightcraft-color",
+ "lightcraft-denoise",
  "lightcraft-develop",
+ "lightcraft-fetch",
  "lightcraft-geom",
  "lightcraft-gpu",
  "lightcraft-merge",
@@ -2896,7 +2913,9 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.21",
+ "tiff",
  "web-time",
 ]
 

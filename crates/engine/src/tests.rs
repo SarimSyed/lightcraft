@@ -182,6 +182,9 @@ fn op_log_replay_reproduces_catalog() {
 #[test]
 fn command_sweep() {
     let mut s = demo();
+    // Normal CI must not consume a developer's installed neural checkpoint.
+    // The dedicated reference-validation suite exercises real inference explicitly.
+    s.enhancer.model_dir = std::env::temp_dir().join(format!("lc-command-sweep-no-model-{}", std::process::id()));
     let mut ids = std::collections::HashSet::new();
     for c in command_specs() {
         assert!(ids.insert(c.id), "duplicate {}", c.id);

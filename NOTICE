@@ -9,6 +9,13 @@ docs/brand/LICENSE-brand.txt.
 
 Third-party material
 
+crates/denoise (lightcraft-denoise) implements the NAFNet SIDD width-32 architecture
+of Liangyu Chen, Xiaojie Chu, Xiangyu Zhang and Jian Sun / megvii-model.
+Upstream: https://github.com/megvii-research/NAFNet (revision 2b4af71).
+MIT and BasicSR Apache-2.0 notices are retained in crates/denoise/NOTICE. The modified
+Rust/Candle port is licensed under Apache-2.0 only; it is not covered by the MIT option.
+Checkpoint files are not bundled; see docs/denoise.md for provenance and delivery gates.
+
 This product bundles third-party material under its own licenses, listed below. The per-file
 list (author, source, license) is in assets/ATTRIBUTION.md.
 

@@ -35,7 +35,7 @@ mode ([mcp.md](mcp.md)) is a thin layer over this channel. Implementation:
 | `ui.clickWidget` / `ui.dragWidget` / `ui.hoverWidget` | `{id, count?, fx?, fy?}` / `{id, toX?, toY?, dx?, dy?, steps?}` / `{id, fx?, fy?}` | Real egui input on a widget (hover: the pointer rests on it, e.g. for preset/profile previews) |
 | `ui.move` / `ui.click` / `ui.drag` | `{x, y, count?, button?}` / `{x, y, toX, toY, steps?}` | Raw pointer input, screen points |
 | `ui.pointer` | `{events: [{kind: down\|drag\|up, x, y}], alt?, shift?, cmd?}` | Gesture in normalized image coordinates (Detail view) |
-| `ui.key` | `{key, cmd?, shift?, alt?, ctrl?}` | Key press |
+| `ui.key` | `{key, cmd?, shift?, alt?, ctrl?, pressed?}` | Key press; optional `pressed: true/false` holds/releases a key across frames |
 | `ui.text` | `{text}` | Text input |
 | `ui.scroll` | `{dx, dy}` | Mouse wheel |
 | `ui.set` | partial UI state, e.g. `{"view": "detail"}` | Resulting UI state |

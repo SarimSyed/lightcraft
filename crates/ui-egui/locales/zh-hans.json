@@ -1257,5 +1257,22 @@
   "Enable luminance noise reduction to adjust this control.": "启用亮度降噪后即可调整此控件。",
   "Enable colour noise reduction to adjust this control.": "启用色彩降噪后即可调整此控件。",
   "Drag up or down to adjust this tonal region. Select the white circle to add curve points.": "向上或向下拖动以调整此色调区域。选择白色圆圈以添加曲线控制点。",
-  "Click to add points; drag to move them. Double-click a point to remove it.": "单击添加控制点，拖动移动控制点。双击控制点以移除。"
+  "Click to add points; drag to move them. Double-click a point to remove it.": "单击添加控制点，拖动移动控制点。双击控制点以移除。",
+  "AI Denoise": "AI 降噪",
+  "AI Denoise…": "AI 降噪…",
+  "Edit AI Denoise…": "编辑 AI 降噪…",
+  "Install NAFNet to prepare the preview.": "安装 NAFNet 以准备预览。",
+  "Model size: 116.7 MB. Inference runs locally.": "模型大小：116.7 MB。推理在本机进行。",
+  "Model licence and notices": "模型许可和声明",
+  "Download is awaiting checkpoint redistribution approval. Offline installation is available.": "下载正在等待权重再分发许可。可离线安装。",
+  "See docs/denoise.md for verified offline installation.": "请参阅 docs/denoise.md 中经过验证的离线安装说明。",
+  "Download Model": "下载模型",
+  "Check Installation": "检查安装",
+  "Hold Before": "按住查看处理前",
+  "100% preview · Hold Before or Space to compare": "100% 预览 · 按住处理前按钮或空格键进行比较",
+  "Preparing preview…": "正在准备预览…",
+  "Processing AI Denoise…": "正在进行 AI 降噪…",
+  "Metal was unavailable. Processing completed on CPU.": "Metal 不可用，已使用 CPU 完成处理。",
+  "Prepare Preview": "准备预览",
+  "Apply": "应用"
 }

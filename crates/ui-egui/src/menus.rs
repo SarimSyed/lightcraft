@@ -136,6 +136,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.export", "Export…", None, "File"),
     ("photo.editInExternal", "Edit in External Editor", Some("Cmd+Shift+E"), "Photo"),
     ("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge"),
+    ("dialog.denoise", "AI Denoise…", None, "Photo"),
     ("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge"),
     ("dialog.mergeHdrPanorama", "HDR Panorama…", None, "Photo>Photo Merge"),
     ("merge.hdrLast", "HDR with Last Settings", Some("Ctrl+Shift+H"), "Photo>Photo Merge"),
@@ -865,6 +866,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "merge.panoramaLast" => crate::merge::start_last(app, "merge.panorama"),
         "merge.hdrPanoramaLast" => crate::merge::start_last(app, "merge.hdrPanorama"),
         "dialog.mergeHdr" => crate::merge::open(app, "merge.hdr"),
+        "dialog.denoise" => crate::panels::denoise::open(app),
         "dialog.mergePanorama" => crate::merge::open(app, "merge.panorama"),
         "dialog.mergeHdrPanorama" => crate::merge::open(app, "merge.hdrPanorama"),
         "app.about" => {
@@ -1251,9 +1253,13 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
 pub fn ui_enabled(app: &LightcraftApp, id: &str) -> bool {
     match id {
         s if s.starts_with("panel.") || s.starts_with("tool.") || s.starts_with("section.") => app.session.active().is_some() || s == "panel.close",
-        "app.export" | "dialog.export" | "dialog.createPreset" | "dialog.rename" | "dialog.captureTime" | "dialog.copySettings" => {
-            app.session.active().is_some()
-        }
+        "app.export"
+        | "dialog.export"
+        | "dialog.createPreset"
+        | "dialog.rename"
+        | "dialog.captureTime"
+        | "dialog.copySettings"
+        | "dialog.denoise" => app.session.active().is_some() && (id != "dialog.denoise" || !cfg!(target_arch = "wasm32")),
         "photo.tagFromTracklog" => app.session.active().is_some() && app.services.pick_tracklog.is_some(),
         "app.exportPrevious" => app.session.active().is_some() && app.session.last_export.is_some(),
         "dialog.pasteSettings" => app.session.active().is_some() && app.session.clipboard.is_some(),
@@ -1295,7 +1301,13 @@ pub fn menu_entries(app: &LightcraftApp) -> Vec<MenuEntry> {
         .filter(|c| !c.3.is_empty())
         .map(|(id, label, sc, m)| MenuEntry {
             id: id.to_string(),
-            label: label.to_string(),
+            label: if *id == "dialog.denoise"
+                && app.session.active().and_then(|id| app.session.develop_of(id)).is_some_and(|d| d.enhance.model.is_some())
+            {
+                "Edit AI Denoise…".into()
+            } else {
+                label.to_string()
+            },
             menu: m.split('>').map(str::to_string).collect(),
             shortcut: sc.map(str::to_string),
             enabled: ui_enabled(app, id),

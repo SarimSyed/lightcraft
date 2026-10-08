@@ -26,7 +26,7 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | C. Views & navigation (VIEW) | 16 | 0 | 1 | 0 | 9/9 (100%) | 4/4 (100%) |
 | D. Search & filter (FILT) | 11 | 1 | 1 | 0 | 4/4 (100%) | 4/4 (100%) |
 | E. Metadata (META) | 5 | 1 | 0 | 0 | 2/2 (100%) | 2/2 (100%) |
-| F. Edit panel — global adjustments (EDIT) | 42 | 1 | 5 | 1 | 28/28 (100%) | 13/14 (93%) |
+| F. Edit panel — global adjustments (EDIT) | 42 | 2 | 4 | 1 | 28/28 (100%) | 13/14 (93%) |
 | G. Profiles (PROF) | 6 | 2 | 3 | 0 | 3/4 (75%) | 2/3 (67%) |
 | H. Crop & rotate (CROP) | 9 | 0 | 0 | 1 | 6/6 (100%) | 3/3 (100%) |
 | I. Remove / healing (REM) | 7 | 1 | 2 | 2 | 4/4 (100%) | 2/3 (67%) |
@@ -36,7 +36,7 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | M. Versions & history (VER) | 5 | 0 | 0 | 0 | 1/1 (100%) | 3/3 (100%) |
 | N. Copy / paste / sync (SYNC) | 5 | 0 | 0 | 0 | 3/3 (100%) | 1/1 (100%) |
 | O. Merge (MERGE) | 4 | 0 | 0 | 0 | — | — |
-| P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
+| P. Enhance (ENH) | 0 | 2 | 0 | 0 | — | — |
 | Q. HDR (HDR) | 0 | 0 | 5 | 0 | — | — |
 | R. Video (VID) | 0 | 0 | 5 | 1 | — | 0/2 (0%) |
 | S. Export (EXP) | 15 | 1 | 2 | 0 | 7/7 (100%) | 7/7 (100%) |
@@ -45,12 +45,12 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | V. Preferences (PREF) | 5 | 0 | 3 | 3 | 1/1 (100%) | 4/4 (100%) |
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 17 | 4 | 1 | 1 | 8/8 (100%) | 6/8 (75%) |
-| Y. Menus | 81 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
+| Y. Menus | 81 | 1 | 3 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 74 | 3 | 3 | 1 | 49/52 (94%) | 22/23 (96%) |
 | Lightroom Classic extras | 31 | 10 | 39 | 9 | — | 21/22 (95%) |
-| **Total** | 389 | 34 | 86 | 37 | 194/200 (97%) | 139/149 (93%) |
+| **Total** | 389 | 38 | 82 | 37 | 194/200 (97%) | 139/149 (93%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **79.8%** of 509 in-scope rows — P0 98.5% of 200 · P1 95.6% of 149 · P2 41.6% of 160.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **80.2%** of 509 in-scope rows — P0 98.5% of 200 · P1 95.6% of 149 · P2 42.8% of 160.
 <!-- /parity:summary -->
 
 ## Top gaps
@@ -72,7 +72,7 @@ Take the first one nobody is working on.
    Object and Describe masks run SAM 3 in pure Rust (`crates/segment`); the weights (SAM License) are never bundled:
    the app offers a consented, verified download, but **LightCraft's CDN mirrors are not configured yet** (the
    built-in list is empty, so today users need their own mirror or a manual install). Subject / Sky / People could
-   use the same model with fixed prompts; denoise / super-resolution models remain a maintainer decision.
+   use the same model with fixed prompts. NAFNet SIDD width-32 now supports native RGB-stage denoise and an offline Enhance workflow; public delivery awaits checkpoint redistribution permission and a verified release (docs/denoise.md). Super resolution remains open.
 7. **HDR** (Q. HDR, LR-EXP-HDR), **video** (R. Video), **Classic output modules** (Map view, Book, Slideshow module,
    Print, publish): large, well understood, lower priority than 1–5.
 
@@ -249,7 +249,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EDIT-DETAIL-SHARPEN | Sharpening | P0 | ✅ | `ctl:detail.sharpenAmount`, `ctl:detail.sharpenRadius`, `ctl:detail.sharpenDetail`, `ctl:detail.sharpenMasking` | no Alt-drag mask preview |
 | LR-EDIT-DETAIL-NR | Luminance noise reduction | P0 | ✅ | `ctl:detail.nrLuminance`, `ctl:detail.nrDetail`, `ctl:detail.nrContrast` | Contrast preserves local structure; public-render noise/brightness and cache regressions cover the controls. Dependent sliders are inert at NR 0; localized help and drag/reset undo are verified. Lightroom fidelity remains unmeasured |
 | LR-EDIT-DETAIL-CNR | Colour noise reduction | P0 | ✅ | `ctl:detail.nrColor`, `ctl:detail.nrColorDetail`, `ctl:detail.nrColorSmoothness` | Independent guided chromaticity filters preserve colour boundaries and luminance; procedural quality and CPU/GPU regressions. Dependent sliders preserve their values at NR 0; localized help. See `docs/noise-reduction.md`; Lightroom fidelity remains unmeasured |
-| LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | ⬜ | | settings field reserved, not rendered |
+| LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | 🟡 | `cmd:enhance.denoise.apply`, `ctl:enhance.denoise`, `crates/denoise/src/lib.rs`, `docs/denoise.md` | NAFNet SIDD width-32, native RGB/demosaiced RAW; non-destructive float cache and one-step undo. Offline installation works; public release/redistribution permission and photographic RAW validation remain gates. No sensor-level RAW parity |
 | LR-EDIT-DETAIL-RAWDETAILS | Improved demosaic toggle | P2 | ⬜ | | |
 | LR-EDIT-DETAIL-SUPERRES | Super resolution | P2 | ⬜ | | |
 | LR-EDIT-DETAIL-AISHARPEN | AI sharpen | OOS | 🚫 | | |
@@ -396,8 +396,8 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-ENH-DIALOG | Enhance dialog | P2 | ⬜ | | |
-| LR-ENH-INPLACE | In-place enhance | P2 | ⬜ | | |
+| LR-ENH-DIALOG | Enhance dialog | P2 | 🟡 | `cmd:dialog.denoise`, `crates/ui-egui/src/panels/denoise.rs` | 100% crop, hold Before/Space, Amount, asynchronous Apply/Cancel; model download release-blocked, other Enhance models deferred |
+| LR-ENH-INPLACE | In-place enhance | P2 | 🟡 | `cmd:enhance.denoise.apply`, `crates/engine/src/enhance.rs` | one-photo denoise saves an adjustment and reusable full-resolution correction; original untouched; other enhancement modes deferred |
 
 ## Q. HDR (HDR)
 
@@ -585,7 +585,7 @@ visible menu bar yet: the menu model is only exposed through the control channel
 | MENU-PHOTO-CREATEVERSION | Create Version… | P1 | ✅ | `cmd:version.create` | no name prompt |
 | MENU-PHOTO-STACK | Stack submenu | P1 | ✅ | `cmd:stack.group`, `cmd:stack.ungroup`, `cmd:dialog.autoStack` | |
 | MENU-PHOTO-MERGE | Photo merge submenu | P2 | ✅ | `cmd:dialog.mergeHdr`, `cmd:dialog.mergePanorama`, `cmd:dialog.mergeHdrPanorama`, `cmd:merge.hdrLast` | |
-| MENU-PHOTO-ENHANCE | Enhance… | P2 | ⬜ | | |
+| MENU-PHOTO-ENHANCE | Enhance… | P2 | 🟡 | `cmd:dialog.denoise` | AI Denoise… / Edit AI Denoise…; other Enhance operations deferred |
 | MENU-PHOTO-AUTO | Auto settings | P0 | ✅ | `cmd:develop.auto` | |
 | MENU-PHOTO-BW | Convert to B&W | P0 | ✅ | `cmd:develop.treatment` | |
 | MENU-PHOTO-RESET | Reset edits / crop | P0 | ✅ | `cmd:develop.reset`, `cmd:crop.reset` | |

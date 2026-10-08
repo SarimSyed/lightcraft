@@ -1040,5 +1040,22 @@
   "Enable luminance noise reduction to adjust this control.": "このコントロールを調整するには、輝度ノイズ軽減を有効にしてください。",
   "Enable colour noise reduction to adjust this control.": "このコントロールを調整するには、カラーノイズ軽減を有効にしてください。",
   "Drag up or down to adjust this tonal region. Select the white circle to add curve points.": "上下にドラッグして、この階調域を調整します。白い丸を選択すると、カーブにポイントを追加できます。",
-  "Click to add points; drag to move them. Double-click a point to remove it.": "クリックしてポイントを追加し、ドラッグして移動します。ポイントをダブルクリックすると削除できます。"
+  "Click to add points; drag to move them. Double-click a point to remove it.": "クリックしてポイントを追加し、ドラッグして移動します。ポイントをダブルクリックすると削除できます。",
+  "AI Denoise": "AIノイズ除去",
+  "AI Denoise…": "AIノイズ除去…",
+  "Edit AI Denoise…": "AIノイズ除去を編集…",
+  "Install NAFNet to prepare the preview.": "プレビューを準備するにはNAFNetをインストールしてください。",
+  "Model size: 116.7 MB. Inference runs locally.": "モデルサイズ：116.7 MB。処理はこの端末で実行されます。",
+  "Model licence and notices": "モデルのライセンスと著作権表示",
+  "Download is awaiting checkpoint redistribution approval. Offline installation is available.": "チェックポイントの再配布許可待ちです。オフラインでインストールできます。",
+  "See docs/denoise.md for verified offline installation.": "検証済みのオフラインインストール手順はdocs/denoise.mdをご覧ください。",
+  "Download Model": "モデルをダウンロード",
+  "Check Installation": "インストールを確認",
+  "Hold Before": "長押しで変更前を表示",
+  "100% preview · Hold Before or Space to compare": "100%プレビュー · 変更前ボタンまたはスペースキーを長押しして比較",
+  "Preparing preview…": "プレビューを準備中…",
+  "Processing AI Denoise…": "AIノイズ除去を処理中…",
+  "Metal was unavailable. Processing completed on CPU.": "Metalが使用できなかったため、CPUで処理しました。",
+  "Prepare Preview": "プレビューを準備",
+  "Apply": "適用"
 }

@@ -29,6 +29,8 @@ pub mod widgets;
 #[cfg(test)]
 mod tests_curve;
 #[cfg(test)]
+mod tests_denoise;
+#[cfg(test)]
 mod tests_grid;
 #[cfg(test)]
 mod tests_library_problem;
@@ -209,6 +211,7 @@ impl LightcraftApp {
     pub fn new(mut session: Session, services: Services) -> Self {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
+        session.enhancer.background = true;
         Self {
             session,
             ui: UiState::default(),
@@ -532,9 +535,15 @@ impl LightcraftApp {
         // same scroll offsets, open sections, style… as the window
         let memory = main.memory(|m| m.clone());
         view.ctx.memory_mut(|m| *m = memory);
+        if let Some(before) = panels::denoise::displayed_before(main) {
+            view.ctx.data_mut(|d| d.insert_temp(egui::Id::new("denoise-before-override"), before));
+        }
         view.run(headless::HeadlessView::raw_input(size, ppp, time, vec![]), |ui| self.ui(ui));
         let img = capture.then(|| {
             let mut tex = self.renderer.cpu_textures();
+            if let Some((id, texture)) = panels::denoise::cpu_texture(&view.ctx) {
+                tex.insert(id, texture);
+            }
             if let (Some((t, ..)), Some(px)) = (&self.merge.preview, &self.merge.preview_pixels) {
                 tex.insert(t.id(), crate::softpaint::CpuTexture::linear(px.clone()));
             }
@@ -616,6 +625,9 @@ impl LightcraftApp {
             ctx.request_repaint();
         }
         self.renderer.poll(ctx, &mut self.session);
+        if let Err(error) = self.session.denoise_poll() {
+            self.ui.status = error.to_string();
+        }
         merge::poll(self, ctx);
         import::poll_scan(self, ctx);
         import::tick(self, ctx);

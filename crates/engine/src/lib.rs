@@ -18,6 +18,7 @@ pub mod crs;
 pub mod crs_masks;
 pub mod demo;
 pub mod devices;
+pub mod enhance;
 pub mod export;
 pub mod files;
 pub mod fonts;
@@ -161,6 +162,7 @@ pub struct Session {
     pub active_spot: Option<usize>,
     /// The persistent library this session writes to (`None` = in-memory only).
     pub library: Option<library::Library>,
+    pub enhancer: enhance::Enhancer,
     /// XMP sidecar preferences (persisted with the library).
     pub xmp: sidecar::XmpPrefs,
     /// Parameters of the last export (`app.export` params, minus targets), persisted in prefs.json.
@@ -248,6 +250,7 @@ impl Session {
             segmenter: segment::Segmenter::default(),
             active_spot: None,
             library: None,
+            enhancer: enhance::Enhancer::default(),
             xmp: sidecar::XmpPrefs::default(),
             last_export: None,
             export_presets: Vec::new(),

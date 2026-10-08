@@ -269,6 +269,12 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
         ui.add_space(8.0);
     });
     section(app, ui, &d, "detail", "Detail", |app, ui, d| {
+        let label = if d.enhance.model.is_some() { "Edit AI Denoise…" } else { "AI Denoise…" };
+        let response = ui.button(crate::i18n::tr(label));
+        register(ui.ctx(), "detail:aiDenoise", response.rect);
+        if response.clicked() {
+            let _ = app.run("dialog.denoise", json!({}));
+        }
         for c in ["detail.sharpenAmount", "detail.sharpenRadius", "detail.sharpenDetail", "detail.sharpenMasking"] {
             control(app, ui, d, c, c == "detail.sharpenAmount" || d.detail.sharpen_amount > 0.0);
         }
