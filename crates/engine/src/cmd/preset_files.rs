@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, cmd, str_param};
 use crate::preset_import::{group_from_dir, read_presets};
-use crate::presets::{LCPRESET_EXT, expand_preset_paths, to_lcpreset};
+use crate::presets::{LCPRESET_EXT, expand_preset_paths_with_seen, to_lcpreset};
 use crate::{Result, Session};
 
 fn strings(p: &Value, key: &str) -> Option<Vec<String>> {
@@ -18,9 +18,10 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
     let mut imported = Vec::new();
     let mut failed = Vec::new();
     let mut skipped = 0usize;
+    let mut seen_dirs = std::collections::HashSet::new();
     for top in &paths {
         let from_dir = std::path::Path::new(top).is_dir();
-        for f in expand_preset_paths(std::slice::from_ref(top)) {
+        for f in expand_preset_paths_with_seen(std::slice::from_ref(top), &mut seen_dirs) {
             // presets in a folder go to a group named after it (unless the file names its own)
             // the path from the imported folder (inclusive) to the file's folder
             let base = std::path::Path::new(top).parent().unwrap_or(std::path::Path::new(""));
@@ -69,10 +70,9 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
     if chosen.is_empty() {
         return Err(bad("preset.export", "no presets to export (create one first, or pass ids/group)"));
     }
-    if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-        std::fs::create_dir_all(dir).map_err(|e| crate::EngineError::Other(format!("{}: {e}", dir.display())))?;
-    }
-    std::fs::write(&path, to_lcpreset(&chosen)).map_err(|e| crate::EngineError::Other(format!("{}: {e}", path.display())))?;
+    let target = path.to_string_lossy();
+    s.check_write_target(&target).map_err(|e| bad("preset.export", e))?;
+    crate::export::write_file_durable(&target, to_lcpreset(&chosen).as_bytes()).map_err(crate::EngineError::Other)?;
     Ok(json!({"path": path.display().to_string(), "count": chosen.len()}))
 }
 

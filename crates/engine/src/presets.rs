@@ -85,14 +85,22 @@ pub fn parse_preset_file(name: &str, bytes: &[u8]) -> Result<Vec<Preset>, String
 
 /// Expand files/folders (recursively) into preset files (`.lcpreset`, `.xmp`).
 pub fn expand_preset_paths(paths: &[String]) -> Vec<String> {
-    fn walk(p: &Path, out: &mut Vec<String>, top: bool) {
+    expand_preset_paths_with_seen(paths, &mut std::collections::HashSet::new())
+}
+
+pub(crate) fn expand_preset_paths_with_seen(paths: &[String], seen: &mut std::collections::HashSet<std::path::PathBuf>) -> Vec<String> {
+    fn walk(p: &Path, out: &mut Vec<String>, top: bool, seen: &mut std::collections::HashSet<std::path::PathBuf>) {
         if p.is_dir() {
+            let Ok(real) = std::fs::canonicalize(p) else { return };
+            if !seen.insert(real) {
+                return;
+            }
             let Ok(rd) = std::fs::read_dir(p) else { return };
             let mut v: Vec<_> = rd.flatten().map(|e| e.path()).collect();
             v.sort();
             for c in v {
                 if !c.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.')) {
-                    walk(&c, out, false);
+                    walk(&c, out, false, seen);
                 }
             }
         } else {
@@ -104,7 +112,7 @@ pub fn expand_preset_paths(paths: &[String]) -> Vec<String> {
     }
     let mut out = Vec::new();
     for p in paths {
-        walk(Path::new(p), &mut out, true);
+        walk(Path::new(p), &mut out, true, seen);
     }
     out
 }

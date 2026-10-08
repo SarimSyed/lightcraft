@@ -21,7 +21,7 @@
 //! and duplicate detection without adding anything, so the user can review the candidates. The
 //! probes are kept and reused by the import that follows.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use lightcraft_catalog::{MediaKind, Op, Photo, PhotoId, Source};
@@ -288,17 +288,21 @@ pub fn is_supported(path: &Path) -> bool {
 /// Expand files and folders (recursively) into supported files. `skip` (e.g. the library folder)
 /// is never descended into.
 pub fn expand(paths: &[String], skip: Option<&Path>) -> Vec<String> {
-    fn walk(p: &Path, skip: Option<&Path>, out: &mut Vec<String>, top: bool) {
+    fn walk(p: &Path, skip: Option<&Path>, skip_real: Option<&Path>, seen: &mut HashSet<PathBuf>, out: &mut Vec<String>, top: bool) {
         let hidden = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'));
         if (hidden && !top) || skip.is_some_and(|s| p == s) {
             return;
         }
         if p.is_dir() {
+            let Ok(real) = std::fs::canonicalize(p) else { return };
+            if skip_real == Some(real.as_path()) || !seen.insert(real) {
+                return;
+            }
             let Ok(rd) = std::fs::read_dir(p) else { return };
             let mut v: Vec<PathBuf> = rd.flatten().map(|e| e.path()).collect();
             v.sort();
             for c in v {
-                walk(&c, skip, out, false);
+                walk(&c, skip, skip_real, seen, out, false);
             }
         } else if top || is_supported(p) {
             // explicitly named files are attempted even with an unknown extension (sniffed)
@@ -306,8 +310,10 @@ pub fn expand(paths: &[String], skip: Option<&Path>) -> Vec<String> {
         }
     }
     let mut out = Vec::new();
+    let skip_real = skip.and_then(|p| std::fs::canonicalize(p).ok());
+    let mut seen_dirs = HashSet::new();
     for p in paths {
-        walk(Path::new(p), skip, &mut out, true);
+        walk(Path::new(p), skip, skip_real.as_deref(), &mut seen_dirs, &mut out, true);
     }
     let mut seen = std::collections::HashSet::new();
     out.retain(|p| seen.insert(p.clone()));

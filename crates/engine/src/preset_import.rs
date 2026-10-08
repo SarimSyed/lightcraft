@@ -209,11 +209,14 @@ impl LuaParser<'_> {
         }
         std::str::from_utf8(&self.s[start..self.i]).ok().and_then(|t| t.parse().ok()).map_or_else(|| self.err("bad number"), Ok)
     }
-    fn value(&mut self) -> Result<Lua, String> {
+    fn value(&mut self, depth: usize) -> Result<Lua, String> {
+        if depth >= 64 {
+            return self.err("preset nesting exceeds 64 levels");
+        }
         self.skip_ws();
         let Some(&c) = self.s.get(self.i) else { return self.err("unexpected end") };
         match c {
-            b'{' => self.table(),
+            b'{' => self.table(depth),
             b'"' | b'\'' => self.string().map(Lua::Str),
             b'[' if self.long_bracket_level().is_some() => {
                 let level = self.long_bracket_level().unwrap_or(0);
@@ -222,7 +225,7 @@ impl LuaParser<'_> {
             b'-' => {
                 self.i += 1;
                 self.skip_ws();
-                match self.value()? {
+                match self.value(depth + 1)? {
                     Lua::Num(n) => Ok(Lua::Num(-n)),
                     _ => self.err("bad negation"),
                 }
@@ -236,10 +239,10 @@ impl LuaParser<'_> {
                 Some(_) => {
                     self.skip_ws();
                     match self.s.get(self.i) {
-                        Some(b'"' | b'\'' | b'{') => self.value(),
+                        Some(b'"' | b'\'' | b'{') => self.value(depth + 1),
                         Some(b'(') => {
                             self.i += 1;
-                            let v = self.value()?;
+                            let v = self.value(depth + 1)?;
                             self.skip_ws();
                             if self.s.get(self.i) == Some(&b')') {
                                 self.i += 1;
@@ -253,7 +256,7 @@ impl LuaParser<'_> {
             },
         }
     }
-    fn table(&mut self) -> Result<Lua, String> {
+    fn table(&mut self, depth: usize) -> Result<Lua, String> {
         self.i += 1; // {
         let (mut arr, mut map) = (Vec::new(), Vec::new());
         loop {
@@ -270,14 +273,14 @@ impl LuaParser<'_> {
                 }
                 Some(b'[') if self.long_bracket_level().is_none() => {
                     self.i += 1;
-                    let k = self.value()?;
+                    let k = self.value(depth + 1)?;
                     self.skip_ws();
                     if self.s.get(self.i) != Some(&b']') {
                         return self.err("expected ]");
                     }
                     self.i += 1;
                     self.expect_eq()?;
-                    let v = self.value()?;
+                    let v = self.value(depth + 1)?;
                     match k {
                         Lua::Str(s) => map.push((s, v)),
                         Lua::Num(n) => map.push((format!("{n}"), v)),
@@ -291,13 +294,13 @@ impl LuaParser<'_> {
                         self.skip_ws();
                         if self.s.get(self.i) == Some(&b'=') && self.s.get(self.i + 1) != Some(&b'=') {
                             self.i += 1;
-                            let v = self.value()?;
+                            let v = self.value(depth + 1)?;
                             map.push((name, v));
                             continue;
                         }
                     }
                     self.i = save;
-                    arr.push(self.value()?);
+                    arr.push(self.value(depth + 1)?);
                 }
             }
         }
@@ -330,7 +333,7 @@ pub fn parse_lua(text: &str) -> Result<Lua, String> {
         }
         None => {}
     }
-    p.value()
+    p.value(0)
 }
 
 /// A localisable string `"$$$/Key/Path=Default text"` → its default text.

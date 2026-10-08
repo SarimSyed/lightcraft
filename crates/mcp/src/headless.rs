@@ -141,14 +141,18 @@ impl Backend for Headless {
 
 /// Expand folders (recursively, sorted) into photo files and make paths absolute.
 pub fn expand_paths(paths: &[String]) -> Vec<String> {
-    fn walk(p: &Path, out: &mut Vec<String>) {
+    fn walk(p: &Path, out: &mut Vec<String>, seen: &mut std::collections::HashSet<std::path::PathBuf>) {
         if p.is_dir() {
+            let Ok(real) = std::fs::canonicalize(p) else { return };
+            if !seen.insert(real) {
+                return;
+            }
             if let Ok(rd) = std::fs::read_dir(p) {
                 let mut v: Vec<_> = rd.flatten().map(|e| e.path()).collect();
                 v.sort();
                 for c in v {
                     if c.file_name().is_some_and(|n| !n.to_string_lossy().starts_with('.')) {
-                        walk(&c, out);
+                        walk(&c, out, seen);
                     }
                 }
             }
@@ -157,10 +161,11 @@ pub fn expand_paths(paths: &[String]) -> Vec<String> {
         }
     }
     let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
     for p in paths {
         let path = Path::new(p);
         if path.is_dir() {
-            walk(path, &mut out);
+            walk(path, &mut out, &mut seen);
         } else {
             // Explicit files are kept even with unknown extensions (the probe decides).
             out.push(std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()).to_string_lossy().to_string());

@@ -120,14 +120,14 @@ impl Resize {
             ResizeMode::Percent => v / 100.0,
         };
         let k = if self.dont_enlarge { k.min(1.0) } else { k };
-        // at least one pixel, at most the encoders' 65535 limit
-        k.clamp(1.0 / short, 65_535.0 / long)
+        // Cap the long edge; a subpixel short edge is rounded up in apply().
+        k.clamp(0.0, 65_535.0 / long)
     }
 
     /// Output size for a `w × h` (cropped, full-resolution) photo.
     pub fn apply(&self, w: f64, h: f64) -> (usize, usize) {
         let k = self.scale(w, h);
-        (((w * k).round() as usize).max(1), ((h * k).round() as usize).max(1))
+        (((w * k).round() as usize).clamp(1, 65_535), ((h * k).round() as usize).clamp(1, 65_535))
     }
 }
 

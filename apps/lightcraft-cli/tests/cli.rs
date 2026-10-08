@@ -19,6 +19,12 @@ fn gradient_png(path: &std::path::Path) {
     std::fs::write(path, png).unwrap();
 }
 
+fn solid_png(path: &std::path::Path, width: usize, height: usize) {
+    let img = lightcraft_raster::Rgba8::from_fn(width, height, |_, _| [80, 120, 180, 255]);
+    let png = lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap();
+    std::fs::write(path, png).unwrap();
+}
+
 fn mean(path: &std::path::Path) -> f64 {
     let d = lightcraft_codecs::decode(&std::fs::read(path).unwrap(), Default::default()).unwrap();
     let img = d.to_srgb8();
@@ -228,6 +234,182 @@ fn run_cli(args: &[&str], stdin: Option<&str>) -> (bool, Vec<Value>, String) {
     let o = child.wait_with_output().unwrap();
     let lines = String::from_utf8_lossy(&o.stdout).lines().map(|l| serde_json::from_str(l).unwrap()).collect();
     (o.status.success(), lines, String::from_utf8_lossy(&o.stderr).to_string())
+}
+
+/// Crash/stall regressions run out of process. Files avoid pipe-buffer deadlocks while waiting.
+fn run_cli_bounded(tag: &str, args: &[&str]) -> (bool, Vec<Value>, String) {
+    let (ok, out, err) = run_process_bounded(tag, &[&["run"], args].concat());
+    let lines = out.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    (ok, lines, err)
+}
+
+fn run_process_bounded(tag: &str, args: &[&str]) -> (bool, String, String) {
+    let stdout = tmp(&format!("{tag}.stdout"));
+    let stderr = tmp(&format!("{tag}.stderr"));
+    let mut child = Command::new(BIN)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(std::fs::File::create(&stdout).unwrap())
+        .stderr(std::fs::File::create(&stderr).unwrap())
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    let mut timed_out = false;
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if start.elapsed() >= std::time::Duration::from_secs(10) {
+            timed_out = true;
+            let _ = child.kill();
+            break child.wait().unwrap();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let out = std::fs::read_to_string(&stdout).unwrap();
+    let err = std::fs::read_to_string(&stderr).unwrap();
+    std::fs::remove_file(stdout).unwrap();
+    std::fs::remove_file(stderr).unwrap();
+    assert!(!timed_out, "{tag} exceeded 10 s and was killed/reaped; stdout: {out}; stderr: {err}");
+    (status.success(), out, err)
+}
+
+#[test]
+fn preset_import_rejects_deep_nesting_without_aborting() {
+    let path = tmp("deep.lrtemplate");
+    std::fs::write(&path, format!("return {}{}", "{".repeat(30_000), "}".repeat(30_000))).unwrap();
+    let paths = format!("paths={}", json!([path.to_string_lossy()]));
+    let (ok, lines, err) = run_cli_bounded("deep-preset", &["preset.import", &paths, "dryRun=true"]);
+    assert!(ok, "the process must survive: {err}");
+    assert_eq!(lines[0]["result"]["imported"], json!([]));
+    let error = lines[0]["result"]["failed"][0][1].as_str().unwrap();
+    assert!(error.contains("64") && error.contains("at byte"), "{error}");
+    std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn preset_import_bounds_recursive_wrappers_and_continues_the_batch() {
+    let dir = tmp("preset-nesting");
+    std::fs::create_dir_all(&dir).unwrap();
+    let valid = dir.join("valid.lrtemplate");
+    std::fs::write(&valid, r#"return { title = "Safe", value = { settings = { Exposure2012 = 0.5 } } }"#).unwrap();
+    let bad = dir.join("bad.lrtemplate");
+    let paths = format!("paths={}", json!([bad.to_string_lossy(), valid.to_string_lossy()]));
+    for (tag, text) in [
+        ("negation", format!("return {}1", "- ".repeat(30_000))),
+        ("calls", format!("return {}1{}", "ZSTR(".repeat(30_000), ")".repeat(30_000))),
+        ("keys", format!("return {}1{}", "{[".repeat(30_000), "]=1}".repeat(30_000))),
+    ] {
+        std::fs::write(&bad, text).unwrap();
+        let (ok, lines, err) = run_cli_bounded(tag, &["presets.list", "preset.import", &paths, "dryRun=true", "presets.list"]);
+        assert!(ok, "{tag}: {err}");
+        assert_eq!(lines[1]["result"]["imported"].as_array().unwrap().len(), 1);
+        let error = lines[1]["result"]["failed"][0][1].as_str().unwrap();
+        assert!(error.contains("64") && error.contains("at byte"), "{tag}: {error}");
+        assert_eq!(lines[0]["result"], lines[2]["result"], "dry run leaves presets unchanged");
+    }
+    for depth in [63, 64] {
+        std::fs::write(&bad, format!("return {}1", "- ".repeat(depth))).unwrap();
+        let (ok, lines, err) = run_cli_bounded("depth-boundary", &["preset.import", &paths, "dryRun=true"]);
+        assert!(ok, "{err}");
+        let error = lines[0]["result"]["failed"][0][1].as_str().unwrap();
+        assert_eq!(error.contains("nesting exceeds 64"), depth == 64, "{depth}: {error}");
+    }
+    let (ok, lines, err) = run_cli_bounded("preset-batch", &["preset.import", &paths, "presets.list"]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[0]["result"]["imported"][0]["name"], "Safe");
+    assert_eq!(lines[0]["result"]["failed"].as_array().unwrap().len(), 1);
+    assert!(lines[1]["result"].as_array().unwrap().iter().any(|p| p["name"] == "Safe"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn folder_imports_terminate_on_directory_symlink_cycles() {
+    let dir = tmp("cycle-imports");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::os::unix::fs::symlink(".", dir.join("a")).unwrap();
+    std::os::unix::fs::symlink(".", dir.join("b")).unwrap();
+    gradient_png(&dir.join("photo.png"));
+    std::fs::write(dir.join("look.lrtemplate"), r#"return { title = "Cycle Look", value = { settings = { Exposure2012 = 0.5 } } }"#).unwrap();
+    let path = dir.to_str().unwrap();
+    let paths = format!("paths={}", json!([path]));
+    for (tag, args) in [
+        ("cycle-cli", vec!["--import", path, "library.info"]),
+        ("cycle-engine", vec!["library.import", &paths, "library.info"]),
+        ("cycle-presets", vec!["preset.import", &paths, "dryRun=true"]),
+    ] {
+        let (ok, lines, err) = run_cli_bounded(tag, &args);
+        assert!(ok, "{tag}: {err}");
+        let result = &lines.last().unwrap()["result"];
+        if tag == "cycle-presets" {
+            assert_eq!(result["imported"].as_array().unwrap().len(), 1, "{result}");
+            assert_eq!(result["failed"], json!([]));
+        } else {
+            assert_eq!(result["photos"], 1, "{result}");
+        }
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn directory_symlinks_remain_importable_and_library_aliases_are_skipped() {
+    let dir = tmp("linked-imports");
+    let real = dir.join("real");
+    let alias = dir.join("alias");
+    std::fs::create_dir_all(&real).unwrap();
+    std::os::unix::fs::symlink("real", &alias).unwrap();
+    gradient_png(&real.join("photo.png"));
+    std::fs::write(real.join("look.lrtemplate"), r#"return { title = "Linked Look", value = { settings = { Exposure2012 = 0.5 } } }"#).unwrap();
+    let paths = format!("paths={}", json!([alias.to_string_lossy(), real.to_string_lossy()]));
+    let (ok, lines, err) = run_cli_bounded("linked-cli", &["--import", alias.to_str().unwrap(), "library.info"]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[0]["result"]["photos"], 1);
+    let (ok, lines, err) = run_cli_bounded("linked-engine", &["library.import", &paths, "library.info"]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[0]["result"]["imported"].as_array().unwrap().len(), 1);
+    assert_eq!(lines[0]["result"]["duplicates"], json!([]));
+    assert_eq!(lines[1]["result"]["photos"], 1);
+    let (ok, lines, err) = run_cli_bounded("linked-presets", &["preset.import", &paths, "dryRun=true"]);
+    assert!(ok, "{err}");
+    let imported = lines[0]["result"]["imported"].as_array().unwrap();
+    assert_eq!(imported.len(), 1);
+    assert_eq!(imported[0]["file"], alias.join("look.lrtemplate").to_string_lossy().as_ref(), "keep the caller's path spelling");
+
+    let library = dir.join("library");
+    std::fs::create_dir_all(&library).unwrap();
+    solid_png(&library.join("must-not-import.png"), 2, 2);
+    std::os::unix::fs::symlink("library", dir.join("a-library-alias")).unwrap();
+    let paths = format!("paths={}", json!([dir.to_string_lossy()]));
+    let (ok, lines, err) = run_cli_bounded("skip-library", &["--library", library.to_str().unwrap(), "library.import", &paths, "library.info"]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[1]["result"]["photos"], 1, "neither the library nor its alias is imported");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn extreme_aspect_ratios_export_at_the_requested_size() {
+    for (tag, width, height, expected) in [("wide", 70_000, 1, (3000, 1)), ("tall", 1, 70_000, (1, 3000))] {
+        let input = tmp(&format!("{tag}.png"));
+        let output = tmp(&format!("{tag}-resized.jpg"));
+        solid_png(&input, width, height);
+        let path = format!("path={}", output.display());
+        let (ok, lines, err) = run_cli_bounded(tag, &["--import", input.to_str().unwrap(), "app.export", &path, "longEdge=3000"]);
+        assert!(ok, "{tag} export must survive: {err}");
+        assert_eq!((lines[0]["result"]["width"].as_u64().unwrap(), lines[0]["result"]["height"].as_u64().unwrap()), expected);
+        let decoded = lightcraft_codecs::decode(&std::fs::read(&output).unwrap(), Default::default()).unwrap();
+        assert_eq!((decoded.width as u64, decoded.height as u64), expected);
+        let (ok, lines, err) =
+            run_cli_bounded(tag, &["--import", input.to_str().unwrap(), "app.export", &path, "longEdge=100000", "dontEnlarge=false"]);
+        assert!(ok, "{tag}: {err}");
+        let capped = if width > height { (65_535, 1) } else { (1, 65_535) };
+        assert_eq!((lines[0]["result"]["width"].as_u64().unwrap(), lines[0]["result"]["height"].as_u64().unwrap()), capped);
+        let decoded = lightcraft_codecs::decode(&std::fs::read(&output).unwrap(), Default::default()).unwrap();
+        assert_eq!((decoded.width as u64, decoded.height as u64), capped);
+        std::fs::remove_file(output).unwrap();
+        std::fs::remove_file(input).unwrap();
+    }
 }
 
 #[test]
