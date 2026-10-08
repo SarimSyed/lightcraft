@@ -157,14 +157,14 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     // screen readers: a slider named after its control, with its value
     let label_text = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
     resp.widget_info(|| egui::WidgetInfo::slider(enabled, value, label_text.clone()));
-    let label_resp = ui.interact(label_rect, id.with("label"), Sense::click());
+    let label_resp = ui.interact(label_rect, id.with("label"), if enabled { Sense::click() } else { Sense::hover() });
     register(ui.ctx(), format!("slider:{}", spec.id), track_rect);
     let mut out = SliderOut::default();
     let span = (spec.max - spec.min).max(1e-9);
     let to_x = |v: f64| track_rect.left() + ((v - spec.min) / span).clamp(0.0, 1.0) as f32 * track_rect.width();
     let from_x = |x: f32| spec.min + ((x - track_rect.left()) / track_rect.width()).clamp(0.0, 1.0) as f64 * span;
     let mut v = value;
-    if resp.double_clicked() || label_resp.double_clicked() {
+    if enabled && (resp.double_clicked() || label_resp.double_clicked()) {
         out.reset = true;
         out.value = Some(spec.default);
         v = spec.default;
@@ -240,8 +240,33 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     };
     p.circle_filled(pos2(tx, track_rect.center().y), ring, t.chrome);
     p.circle_stroke(pos2(tx, track_rect.center().y), ring, Stroke::new(2.0, ring_c));
-    if hovered {
+    if enabled && hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+    }
+    if resp.hovered() || label_resp.hovered() {
+        let description = match spec.id {
+            "detail.nrLuminance" => Some("Reduce brightness noise (grain)."),
+            "detail.nrDetail" => Some("Preserve fine luminance detail. Higher values retain more noise."),
+            "detail.nrContrast" => Some("Preserve local contrast while reducing noise."),
+            "detail.nrColor" => Some("Reduce colour speckles while retaining brightness."),
+            "detail.nrColorDetail" => Some("Preserve colour boundaries. Higher values retain more colour noise."),
+            "detail.nrColorSmoothness" => Some("Smooth larger colour-noise patches."),
+            _ => None,
+        };
+        if let Some(description) = description {
+            let mut help = crate::i18n::tr(description).to_string();
+            if !enabled {
+                let hint = if matches!(spec.id, "detail.nrDetail" | "detail.nrContrast") {
+                    "Enable luminance noise reduction to adjust this control."
+                } else {
+                    "Enable colour noise reduction to adjust this control."
+                };
+                help.push_str(&format!("\n{}", crate::i18n::tr(hint)));
+            }
+            help.push_str(&format!("\n{}", crate::i18n::tr("Evaluate noise reduction at 100% zoom.")));
+            resp.on_hover_text(help.clone());
+            label_resp.on_hover_text(help);
+        }
     }
     out
 }

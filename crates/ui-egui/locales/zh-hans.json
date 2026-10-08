@@ -1246,5 +1246,14 @@
   "this photo": "这张照片",
   "日本語": "日本語",
   "繁體中文（台灣）": "繁體中文（台灣）",
-  "In Recently Deleted": "在“最近删除”中"
+  "In Recently Deleted": "在“最近删除”中",
+  "Reduce brightness noise (grain).": "减少亮度噪点（颗粒）。",
+  "Preserve fine luminance detail. Higher values retain more noise.": "保留细微的亮度细节。数值越高，保留的噪点越多。",
+  "Preserve local contrast while reducing noise.": "在降噪时保留局部对比度。",
+  "Reduce colour speckles while retaining brightness.": "减少彩色噪点，同时保留亮度。",
+  "Preserve colour boundaries. Higher values retain more colour noise.": "保留色彩边界。数值越高，保留的彩色噪点越多。",
+  "Smooth larger colour-noise patches.": "平滑较大的彩色噪点区域。",
+  "Evaluate noise reduction at 100% zoom.": "请在 100% 缩放下评估降噪效果。",
+  "Enable luminance noise reduction to adjust this control.": "启用亮度降噪后即可调整此控件。",
+  "Enable colour noise reduction to adjust this control.": "启用色彩降噪后即可调整此控件。"
 }

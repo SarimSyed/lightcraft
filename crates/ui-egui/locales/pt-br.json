@@ -1257,5 +1257,14 @@
   "of the following rules:": "das seguintes regras:",
   "saved in": "salvo em",
   "this photo": "esta foto",
-  "− harder border · + softer border": "− borda mais dura · + borda mais suave"
+  "− harder border · + softer border": "− borda mais dura · + borda mais suave",
+  "Reduce brightness noise (grain).": "Reduz o ruído de luminosidade (granulação).",
+  "Preserve fine luminance detail. Higher values retain more noise.": "Preserva os detalhes finos de luminância. Valores mais altos mantêm mais ruído.",
+  "Preserve local contrast while reducing noise.": "Preserva o contraste local ao reduzir o ruído.",
+  "Reduce colour speckles while retaining brightness.": "Reduz as manchas de ruído colorido, preservando a luminosidade.",
+  "Preserve colour boundaries. Higher values retain more colour noise.": "Preserva os limites entre cores. Valores mais altos mantêm mais ruído de cor.",
+  "Smooth larger colour-noise patches.": "Suaviza manchas maiores de ruído de cor.",
+  "Evaluate noise reduction at 100% zoom.": "Avalie a redução de ruído com zoom de 100%.",
+  "Enable luminance noise reduction to adjust this control.": "Ative a redução de ruído de luminância para ajustar este controle.",
+  "Enable colour noise reduction to adjust this control.": "Ative a redução de ruído de cor para ajustar este controle."
 }

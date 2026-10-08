@@ -273,9 +273,11 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId) {
             control(app, ui, d, c, c == "detail.sharpenAmount" || d.detail.sharpen_amount > 0.0);
         }
         sub_title(ui, crate::i18n::tr("Noise Reduction"));
-        for c in ["detail.nrLuminance", "detail.nrDetail", "detail.nrContrast", "detail.nrColor", "detail.nrColorDetail", "detail.nrColorSmoothness"]
-        {
-            control(app, ui, d, c, true);
+        for c in ["detail.nrLuminance", "detail.nrDetail", "detail.nrContrast"] {
+            control(app, ui, d, c, c == "detail.nrLuminance" || d.detail.nr_luminance > 0.0);
+        }
+        for c in ["detail.nrColor", "detail.nrColorDetail", "detail.nrColorSmoothness"] {
+            control(app, ui, d, c, c == "detail.nrColor" || d.detail.nr_color > 0.0);
         }
         ui.add_space(8.0);
     });

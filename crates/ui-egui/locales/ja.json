@@ -1029,5 +1029,14 @@
   "Friday": "金曜日",
   "Saturday": "土曜日",
   "Sunday": "日曜日",
-  "Unknown Date": "日付不明"
+  "Unknown Date": "日付不明",
+  "Reduce brightness noise (grain).": "明るさのノイズ（粒状感）を軽減します。",
+  "Preserve fine luminance detail. Higher values retain more noise.": "輝度の細かいディテールを保持します。値を上げるとノイズも多く残ります。",
+  "Preserve local contrast while reducing noise.": "ノイズを軽減しながら局所的なコントラストを保持します。",
+  "Reduce colour speckles while retaining brightness.": "明るさを保持しながら色ノイズを軽減します。",
+  "Preserve colour boundaries. Higher values retain more colour noise.": "色の境界を保持します。値を上げると色ノイズも多く残ります。",
+  "Smooth larger colour-noise patches.": "大きな色ノイズの斑点を滑らかにします。",
+  "Evaluate noise reduction at 100% zoom.": "ノイズ軽減の効果は100%表示で確認してください。",
+  "Enable luminance noise reduction to adjust this control.": "このコントロールを調整するには、輝度ノイズ軽減を有効にしてください。",
+  "Enable colour noise reduction to adjust this control.": "このコントロールを調整するには、カラーノイズ軽減を有効にしてください。"
 }

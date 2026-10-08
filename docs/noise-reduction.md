@@ -17,6 +17,9 @@ enabled render with the improved colour filter, including existing saved edits.
   full resolution. CPU RGB blur passes evaluate the three scalar filters together without
   cross-channel covariance. GPU filters use scalar planes and never six-channel blur buffers.
   Larger subsampling steps lost too much colour-edge detail in the procedural regression.
+- Detail/Contrast are inactive at zero luminance NR; Colour Detail/Smoothness are inactive at
+  zero colour NR. Their saved values remain intact, including through label double-clicks.
+  Localized hover help describes each control and recommends evaluating NR at 100% zoom.
 
 ## Validation
 
@@ -30,10 +33,15 @@ Public render tests compare output against independently clean, procedurally gen
   edge-retention ratios. Higher Colour Detail preserves more edge detail.
 - NR-off, black, constant-colour, near-black and singleton images remain finite and correct.
   A Contrast change invalidates cached previews. Real CLI tests verify lossless exports and
-  preservation of the input file.
+  preservation of the input file. Headless control tests verify disabled dragging, nudging and
+  double-click reset, plus one-step drag undo and undoable label reset on enabled controls.
 - GPU equivalence requires mean RGB difference below 0.5 LSB and maximum difference at most
   3 LSB. Hardware tests run on AMD Radeon RX 9060 XT / Vulkan; tests explicitly skip without
   an adapter. This is not verification of all drivers.
+- Native control smoke checks on the D7100 raw capture Fit and 100% views with no GPU
+  fallback; the final 100% render took 41.7 ms. English headless screenshots verify enabled
+  and disabled controls and hover help. Native compositor behaviour and CJK font rendering
+  remain outside this verification (the local build has no optional craft-fonts input).
 
 These tests establish synthetic quality criteria, not Lightroom parity or a measured Nikon noise
 model. The D7100 sample is used for performance and native Fit/100% smoke checks; high-ISO
