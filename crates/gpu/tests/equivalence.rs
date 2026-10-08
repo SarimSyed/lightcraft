@@ -14,6 +14,29 @@ use lightcraft_raster::{Rgb32f, Rgba8};
 const MEAN_LSB: f64 = 0.5;
 const MAX_LSB: u8 = 3;
 
+#[test]
+fn luminance_noise_contrast_matches_cpu_in_a_cached_slider_session() {
+    if !gpu() {
+        return;
+    }
+    let src = Arc::new(Rgb32f::from_fn(128, 128, |x, y| {
+        let v = 0.2 + (x as f32 * 0.4).sin() * 0.06 + ((x * 7919 + y * 104729) % 97) as f32 * 0.0001;
+        [v; 3]
+    }));
+    let info = SourceInfo::default();
+    let request = RenderRequest::fit(128, 128);
+    let stages = StageCache::default();
+    let mut settings = DevelopSettings::default();
+    settings.detail.nr_luminance = 80.0;
+    for contrast in [0.0, 50.0, 100.0, 0.0] {
+        settings.detail.nr_contrast = contrast;
+        let expected = render(&src, &info, &settings, &request).image;
+        let actual = lightcraft_gpu::render(&src, &info, &settings, &request, Some(&stages)).expect("GPU render").image;
+        let (mean, max, _) = diff(&expected, &actual);
+        assert!(mean < MEAN_LSB && max <= MAX_LSB, "contrast {contrast}: mean {mean}, max {max}");
+    }
+}
+
 fn gpu() -> bool {
     let ok = lightcraft_gpu::available();
     if !ok {
