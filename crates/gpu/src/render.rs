@@ -314,7 +314,10 @@ fn guided_coeffs(cx: &mut Cx<'_>, p: &Buf, w: usize, h: usize, sigma: f32, eps: 
 
 /// Fast guided filter (`local::guided_fast`): coefficients on a subsampled grid.
 fn guided_fast(cx: &mut Cx<'_>, p: &Buf, w: usize, h: usize, sigma: f32, eps: f32) -> Buf {
-    let s = local::guided_fast_step(sigma);
+    guided_subsampled(cx, p, w, h, sigma, eps, local::guided_fast_step(sigma))
+}
+
+fn guided_subsampled(cx: &mut Cx<'_>, p: &Buf, w: usize, h: usize, sigma: f32, eps: f32, s: usize) -> Buf {
     if s <= 1 {
         return guided(cx, p, w, h, sigma, eps);
     }
@@ -726,7 +729,16 @@ fn denoise(cx: &mut Cx<'_>, img: Buf, plan: &Plan<'_>) -> Buf {
     if let Some(nr) = col {
         let chroma = cx.gpu.buffer(n * 3);
         map(cx, "chroma_k", n, &[], [Some(&img), None, None], &chroma);
-        let b = gaussian(cx, &chroma, w, h, 3, nr.sigma);
+        let channel = |cx: &mut Cx<'_>, k: u32| {
+            let p = cx.gpu.buffer(n);
+            map(cx, "rgb_channel", n, &[k], [Some(&chroma), None, None], &p);
+            guided_subsampled(cx, &p, w, h, nr.sigma, nr.eps, nr.step)
+        };
+        let r = channel(cx, 0);
+        let g = channel(cx, 1);
+        let blue = channel(cx, 2);
+        let b = cx.gpu.buffer(n * 3);
+        map(cx, "rgb_from_planes", n, &[], [Some(&r), Some(&g), Some(&blue)], &b);
         let out = cx.gpu.buffer(n * 3);
         map(cx, "nr_col", n, &[nr.t.to_bits()], [Some(&img), Some(&chroma), Some(&b)], &out);
         img = out;

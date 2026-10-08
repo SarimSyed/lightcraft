@@ -156,8 +156,28 @@ fn chroma_k(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups
     put_rgb(i, vec3<f32>(c0.x / y, c0.y / y, c0.z / y));
 }
 
-// Colour NR: blend chromaticity towards its blur and re-apply luminance (a: image, b: chroma,
-// c: blurred chroma). P[1] = t.
+// Extract one RGB channel (P[1]) for an independent scalar guided filter.
+@compute @workgroup_size(256)
+fn rgb_channel(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
+    let i = lin_index(g, nw);
+    if (i >= pu(0u)) {
+        return;
+    }
+    dst[i] = a[3u * i + pu(1u)];
+}
+
+// Reassemble independently filtered chromaticity planes.
+@compute @workgroup_size(256)
+fn rgb_from_planes(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
+    let i = lin_index(g, nw);
+    if (i >= pu(0u)) {
+        return;
+    }
+    put_rgb(i, vec3<f32>(a[i], b[i], c[i]));
+}
+
+// Colour NR: blend self-guided chromaticity, normalize and restore original luminance.
+// (a: image, b: chroma, c: filtered chroma). P[1] = t.
 @compute @workgroup_size(256)
 fn nr_col(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
     let i = lin_index(g, nw);
@@ -168,7 +188,13 @@ fn nr_col(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) 
     let t = pf(1u);
     let c0 = vec3<f32>(b[3u * i], b[3u * i + 1u], b[3u * i + 2u]);
     let cb = vec3<f32>(c[3u * i], c[3u * i + 1u], c[3u * i + 2u]);
-    put_rgb(i, max((c0 + (cb - c0) * t) * yl, vec3<f32>(0.0)));
+    let mixed = max(c0 + (cb - c0) * t, vec3<f32>(0.0));
+    let norm = lum2020(mixed);
+    if (norm > 1e-6 && norm <= 3.402823e38) {
+        put_rgb(i, mixed * (yl / norm));
+    } else {
+        put_rgb(i, rgb_a(i));
+    }
 }
 
 // Every P[1]-th value of `a` (airlight sampling). P[0] = output count.

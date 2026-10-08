@@ -37,6 +37,32 @@ fn luminance_noise_contrast_matches_cpu_in_a_cached_slider_session() {
     }
 }
 
+#[test]
+fn colour_noise_reduction_matches_cpu_at_equal_luminance_edges() {
+    if !gpu() {
+        return;
+    }
+    let src = Arc::new(Rgb32f::from_fn(128, 128, |x, y| {
+        let mut c = if x < 64 { [0.5, 0.1, 0.1] } else { [0.1, 0.25498524, 0.1] };
+        let n = (((x * 7919 + y * 104729) % 97) as f32 / 97.0 - 0.5) * 0.02;
+        c[0] += n;
+        c[1] -= n * (0.2627 / 0.6780);
+        c
+    }));
+    let mut settings = DevelopSettings::default();
+    settings.detail.nr_color = 80.0;
+    for size in [64, 128] {
+        for detail in [0.0, 50.0, 100.0] {
+            settings.detail.nr_color_detail = detail;
+            check("colour boundary", &src, &SourceInfo::default(), &settings, &RenderRequest::fit(size, size));
+        }
+    }
+    for (w, h) in [(1, 1), (1, 16), (16, 1)] {
+        let black = Arc::new(Rgb32f::filled(w, h, [0.0; 3]));
+        check("black / singleton NR", &black, &SourceInfo::default(), &settings, &RenderRequest::fit(w, h));
+    }
+}
+
 fn gpu() -> bool {
     let ok = lightcraft_gpu::available();
     if !ok {

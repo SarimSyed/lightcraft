@@ -47,6 +47,8 @@ const MODULES: &[Module] = &[
             "wb_k",
             "nr_lum",
             "chroma_k",
+            "rgb_channel",
+            "rgb_from_planes",
             "nr_col",
             "subsample",
             "redeye_k",

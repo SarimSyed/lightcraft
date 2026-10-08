@@ -100,8 +100,11 @@ fn guided_apply(p: &Plane, a: &Plane, b: &Plane) -> Plane {
 /// bilinearly upsampled; the output keeps full-resolution edges. Equivalent to [`guided`] for
 /// large windows at a fraction of the cost.
 pub fn guided_fast(p: &Plane, sigma: f32, eps: f32) -> Plane {
+    guided_subsampled(p, sigma, eps, guided_fast_step(sigma))
+}
+
+fn guided_subsampled(p: &Plane, sigma: f32, eps: f32, s: usize) -> Plane {
     use lightcraft_raster::resample::{Filter, resize};
-    let s = guided_fast_step(sigma);
     if s <= 1 {
         return guided(p, sigma, eps);
     }
@@ -125,10 +128,13 @@ pub struct NrLum {
     pub k: f32,
 }
 
-/// Colour noise reduction: chromaticity blurred by `sigma` px, mixed in by `t`.
+/// Colour noise reduction: self-guided chromaticity, mixed in by `t`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct NrColor {
     pub sigma: f32,
+    pub eps: f32,
+    /// Half-resolution coefficients for larger windows; full-resolution colour edges guide output.
+    pub step: usize,
     pub t: f32,
 }
 
@@ -149,13 +155,14 @@ pub fn nr_params(s: &DevelopSettings, src_long: usize, out_long: usize) -> (Opti
     let c = (col > 0.0).then(|| {
         let sigma = (1.5 + 6.0 * col) * scale.max(0.35) * (1.0 + (s.detail.nr_color_smoothness / 100.0) as f32);
         let keep = (s.detail.nr_color_detail / 100.0) as f32 * 0.5;
-        NrColor { sigma, t: col * (1.0 - keep) }
+        let detail = (s.detail.nr_color_detail / 100.0).clamp(0.0, 1.0) as f32;
+        NrColor { sigma, eps: 0.0025 + 0.0375 * (1.0 - detail).powi(2), step: if sigma >= 1.5 { 2 } else { 1 }, t: col * (1.0 - keep) }
     });
     (l, c)
 }
 
 /// Noise reduction at output resolution: luminance via an edge-aware self-guided filter on
-/// log-luminance, colour by blurring chromaticity (rgb / Y) and re-applying the original luminance.
+/// log-luminance, colour by self-guided chromaticity (rgb / Y), preserving colour edges and luminance.
 /// Radii scale with how much the source was downsampled (preview noise is already averaged out).
 pub fn denoise(img: &mut Rgb32f, s: &DevelopSettings, src_long: usize, out_long: usize) {
     let (lum, col) = nr_params(s, src_long, out_long);
@@ -182,20 +189,41 @@ pub fn denoise(img: &mut Rgb32f, s: &DevelopSettings, src_long: usize, out_long:
             let y = luminance_2020(c).max(1e-6);
             [c[0] / y, c[1] / y, c[2] / y]
         });
-        let b = gaussian(&chroma, nr.sigma);
+        let (a, b) = colour_coeffs(&chroma, nr);
         for_rows(&mut img.data, w, |y, row| {
-            for (x, p) in row.iter_mut().enumerate() {
-                let i = y * w + x;
+            for ((p, c0), (a, b)) in row.iter_mut().zip(chroma.row(y)).zip(a.row(y).iter().zip(b.row(y))) {
                 let yl = luminance_2020(*p);
-                let c0 = chroma.data[i];
-                let cb = b.data[i];
-                *p = [0, 1, 2].map(|k| ((c0[k] + (cb[k] - c0[k]) * nr.t) * yl).max(0.0));
+                let cb = [0, 1, 2].map(|k| a[k] * c0[k] + b[k]);
+                let mixed = [0, 1, 2].map(|k| (c0[k] + (cb[k] - c0[k]) * nr.t).max(0.0));
+                let norm = luminance_2020(mixed);
+                if norm.is_finite() && norm > 1e-6 {
+                    *p = mixed.map(|c| c * (yl / norm));
+                }
             }
         });
         if let Some(t) = _t {
             eprintln!("    nr colour: {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
         }
     }
+}
+
+/// Three independent scalar self-guided filters, evaluated together as RGB to share resampling
+/// and vectorize blur passes. There is no cross-channel covariance or six-channel blur.
+fn colour_coeffs(p: &Rgb32f, nr: NrColor) -> (Rgb32f, Rgb32f) {
+    use lightcraft_raster::resample::{Filter, resize};
+    let (w, h) = (p.width.div_ceil(nr.step).max(1), p.height.div_ceil(nr.step).max(1));
+    let lo = resize(p, w, h, Filter::Box);
+    let sigma = nr.sigma / nr.step as f32;
+    let (mean, corr) = par_join(|| gaussian(&lo, sigma), || gaussian(&lo.map(|c| c.map(|v| v * v)), sigma));
+    let a = corr.zip_map(&mean, |c, m| {
+        [0, 1, 2].map(|k| {
+            let var = (c[k] - m[k] * m[k]).max(0.0);
+            var / (var + nr.eps)
+        })
+    });
+    let b = mean.zip_map(&a, |m, a| [0, 1, 2].map(|k| m[k] - a[k] * m[k]));
+    let (a, b) = par_join(|| gaussian(&a, sigma), || gaussian(&b, sigma));
+    par_join(|| resize(&a, p.width, p.height, Filter::Bilinear), || resize(&b, p.width, p.height, Filter::Bilinear))
 }
 
 pub fn log_lum(c: [f32; 3]) -> f32 {

@@ -31,6 +31,8 @@ duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 | **HDR & video** | 0% | | HDR edit/display/export; video play/trim/edit/export |
 | **Platform & robustness** | ~70% | macOS native; Windows/Linux builds; web via WASM; no-panic lints workspace-wide, `unsafe` confined to `crates/sysmem`; failed saves are reported; GPU errors fall back to CPU | Windows installer UI unverified on Windows (PR #79); GPU path proven only on Apple + user reports; English, Simplified/Traditional Chinese and Japanese UI (see docs/localization.md); remaining technical errors; Traditional Chinese uses the Simplified Chinese font until craft-fonts has a TC face; accessibility partial; headless UI tests time out under machine load |
 
+Noise reduction now has procedural noise, colour-edge and brightness checks, cache regressions and CPU/GPU equivalence coverage ([validation notes](docs/noise-reduction.md)). This does not establish Lightroom render fidelity.
+
 ### By kind of user
 
 | User | Readiness | What blocks them |
