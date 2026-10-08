@@ -49,7 +49,9 @@ Priorities, in order. Each points at tracker rows in [`docs/parity.md`](docs/par
 
 1. **Camera colour calibration of our own** (LR-PROF-CAMERACOLOR, P0): fit each camera to its own embedded JPEG, use
    matrices the files carry themselves, then chart shots. Sony ARW, Nikon NEF and Panasonic RW2 have the file-local fit
-   (matrix + tone curve from their own JPEG); generalise it to the other makes' raws (PEF, ORF…), then validate fidelity.
+   (matrix + tone curve from their own JPEG). D7100 now has decode/load/CLI regression coverage for four CC0
+   12/14-bit lossless/lossy samples (mean ΔE 11.2–12.1 vs their JPEGs; calibration still open). Generalise it to the
+   other makes' raws (PEF, ORF…), then validate fidelity.
 2. **Raw formats, clean-room** (LR-IMP-FORMATS, P0): **CR3** first, then compressed RAF / ORF, NEF
    lossy-after-split, sRAW. Decided 2026-10-05: write our own decoders from prose descriptions (never decoder source,
    no LGPL dependency); compressed NEF (#86) is the template.

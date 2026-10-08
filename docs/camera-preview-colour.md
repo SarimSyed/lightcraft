@@ -40,6 +40,40 @@ Measuring this found a decoder bug: 12-bit NEFs store maker note `0x003d` BlackL
 
 On one sample, Exposure +1 EV, Saturation +100, Contrast +50, warm/cool WB, tint, highlights and shadows all changed the output. The same matrix and curve were selected for 400-pixel and full-resolution renders. Headless UI checks wait until the loupe reports `source: render` and no jobs remain; the camera JPEG stand-in does not count as verification.
 
+### Nikon D7100 verification (2026-10-08)
+
+Four CC0 samples from [raw.pixls.us](https://raw.pixls.us/) (contributor Chris Ruff) cover 12/14-bit lossless and lossy type 2 NEF. Each decodes a 6036×4020 RGGB mosaic with vendor WB; none falls back to the embedded JPEG. All four accept the existing file-local look. No decoder or fitting change was needed for these files. They are four outdoor playground shots, not a calibration set or broad lighting coverage.
+
+The CLI regression exports at 1200 px, reduces the export and its own camera JPEG to 200×133 with box filtering in linear sRGB, and measures CIE76 under D65. The JPEG reference is decoded at up to 384 px first. The images are resized to the same frame without geometric registration: the RAW is 6036×4020 and the JPEG 6000×4000, so border/framing differences contribute to the error. These numbers cannot be compared directly with measurements using different resampling or alignment.
+
+| Mode | Mean CIE76 ΔE | Mean signed ΔL* (export minus JPEG) |
+|---|---:|---:|
+| 12-bit lossless | 12.11 | +0.83 |
+| 14-bit lossless | 11.51 | +0.53 |
+| 12-bit lossy type 2 | 11.15 | +0.66 |
+| 14-bit lossy type 2 | 11.59 | +1.51 |
+
+These results establish plausible colour, **not accurate calibration or Lightroom parity**. The regression ceiling (mean ΔE < 15, absolute mean ΔL* < 4) protects this baseline; it is not a fidelity target. The remaining differences, including framing, need investigation with varied D7100 scenes and chart shots before changing the shared fit. The lossy samples here do not use the unsupported lossy-after-split variant. No built-in D7100 profile is shipped.
+
+Tests use public `raw::decode`, `files::load_bytes`, and the real CLI `render`. They check CFA against mosaic statistics, WB and non-flat sensor data, RAW editing and accepted tone, finite output, colour/lightness against the JPEG, Exposure +1 changing exported pixels, and byte-identical originals. CLI subprocesses have a 10-second kill-and-reap deadline. Since this behaviour already worked, these are baseline regression checks rather than a claimed red/green decoder fix.
+
+Fetch with `cargo xtask corpus --download` (the shared corpus list, including these four files), then run:
+
+```sh
+cargo test --locked -p lightcraft-raw --test corpus corpus_d7100 -- --nocapture
+cargo test --locked -p lightcraft-engine corpus_d7100 -- --nocapture
+cargo test --locked -p lightcraft-cli --test cli corpus_d7100 -- --nocapture
+```
+
+The tests skip absent files, as other corpus tests do; an absent corpus is not verification. `LIGHTCRAFT_CORPUS` can select another corpus root. Media stays in ignored `corpus/raw/`. Published SHA-256 digests verified before this run (download ids link to the exact CC0 files):
+
+| File in `corpus/raw/` | Download | SHA-256 |
+|---|---|---|
+| `nef-nikon-d7100-lossless14.nef` | [1855](https://raw.pixls.us/getfile.php/1855/nice/Nikon%20-%20D7100%20-%2014bit%2014bit%20compressed%20%28Lossless%29%20%283:2%29.NEF) | `b241cb95b1008f25b8ed7d1443354e8cc7dee9c4d4e1edd0a5856d92063a48d0` |
+| `nef-nikon-d7100-lossless12.nef` | [1856](https://raw.pixls.us/getfile.php/1856/nice/Nikon%20-%20D7100%20-%2012bit%2012bit%20compressed%20%28Lossless%29%20%283:2%29.NEF) | `9c6ec61079c3511fed302e9ccf1da31439fb7d4402b555ec6f14404cb67db742` |
+| `nef-nikon-d7100-lossy14.nef` | [1857](https://raw.pixls.us/getfile.php/1857/nice/Nikon%20-%20D7100%20-%2014bit%2014bit%20compressed%20%28Lossy%20%28type%202%29%29%20%283:2%29.NEF) | `b9e1ac6c38eb06a9d296bbafe81ca403a7f1520d61735603cb238b9ae6a35fce` |
+| `nef-nikon-d7100-lossy12.nef` | [1858](https://raw.pixls.us/getfile.php/1858/nice/Nikon%20-%20D7100%20-%2012bit%2012bit%20compressed%20%28Lossy%20%28type%202%29%29%20%283:2%29.NEF) | `48b86be680b631291e193660daeece2ca1515583c9780ab9fcff2ea80628d3d1` |
+
 ### Panasonic RW2
 
 The same fit, gates and relative WB apply to Panasonic RW2, Leica RWL and the older Panasonic RAW files (all decode as `RawFormat::Rw2`; white balance from tags `0x0024`–`0x0026`). Their embedded JPEG (`JpgFromRaw`, 1920 px wide) always shows the whole active area, while the default crop is the aspect ratio set in the camera (4:3 on the 3:2 sensors, 1:1, 16:9, 2.71 on the S1R II…); when the preview matches the active area rather than the crop, the reference is cropped to the default crop before fitting.
@@ -53,4 +87,3 @@ This is a per-file camera-look estimate, **not measured spectral calibration or 
 One photo can show too little of a colour for its own fit to learn it: in a second shot of the lime shirt only a few dozen proxy pixels show it, next to a hillside of foliage at the same hue that the camera renders differently, and the shirt stayed yellow (hue 68° against the JPEG's 82°; a 192-pixel proxy only reached 74°). `lightcraft-cli calibrate [--max N] [--out DIR] FOLDERS…` therefore pools the colour pairs of many ARWs per camera model — each against its own embedded JPEG, at a 192-pixel proxy, at most 4000 pairs per photo, files spread evenly over the folders — and fits one matrix (from white-balanced camera RGB, so no single photo's white point is baked in) and one hue/saturation/value table. Models need at least 5 usable photos.
 
 Profiles are JSON files `<model>.json` in `$LIGHTCRAFT_CAMERA_PROFILES`, else `<config>/camera-profiles` (macOS `~/Library/Application Support/LightCraft/camera-profiles`); a local profile replaces a built-in one. Built-in profiles live in `assets/camera-profiles/` (listed in `assets/ATTRIBUTION.md`) and are compiled in, so the app, CLI and web build share them: ILCE-7M4, fitted to 597 photos (2.2 million colour pairs) shot in 2026, mostly with the Standard creative style and DRO Auto. They hold aggregate colour statistics only. A photo of a profiled model takes its colour from the profile and fits only its own tone and chroma curves (DRO and picture styles vary per shot); the acceptance gates still apply, and a rejected fit falls back as before. Files are read once per process and validated (version, bounded invertible matrix, table shape and finite data); a damaged file is ignored with a warning. The profiles folder's contents are part of the render cache keys, so thumbnails rendered before a profile existed are redone; smart previews built before keep their colour until rebuilt.
-

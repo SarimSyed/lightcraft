@@ -219,6 +219,29 @@ fn corpus_nef_12_bit_black_level_matches_14_bit() {
     }
 }
 
+/// D7100 CC0 samples cover both sample depths and compression modes. Decode the mosaic, not a JPEG stand-in.
+#[test]
+fn corpus_d7100_compressed_modes_decode() {
+    let dir = corpus_root().join("raw");
+    for (mode, bits) in [("lossless12", 12), ("lossless14", 14), ("lossy12", 12), ("lossy14", 14)] {
+        let path = dir.join(format!("nef-nikon-d7100-{mode}.nef"));
+        let Ok(bytes) = std::fs::read(&path) else {
+            eprintln!("skip: {} absent", path.display());
+            continue;
+        };
+        let img = decode(&bytes).unwrap_or_else(|e| panic!("D7100 {mode}: {e}"));
+        assert_eq!(img.metadata.model.as_deref(), Some("NIKON D7100"));
+        assert_eq!((img.width, img.height, img.bits), (6036, 4020, bits));
+        assert_eq!(img.cfa.as_ref().unwrap().name(), "RGGB");
+        assert!(!green_on_main_diagonal(&img), "D7100 {mode}: mosaic disagrees with RGGB");
+        let wb = img.wb_multipliers.unwrap();
+        assert!((2.0..2.5).contains(&wb[0]) && wb[1] == 1.0 && (1.5..1.9).contains(&wb[2]), "D7100 {mode}: WB {wb:?}");
+        let means = block_means(&img);
+        let (lo, hi) = means.iter().fold((f64::MAX, 0f64), |(lo, hi), &v| (lo.min(v), hi.max(v)));
+        assert!(hi <= img.white_at(0) as f64 && hi - lo > img.white_at(0) as f64 * 0.1, "D7100 {mode}: flat/out-of-range mosaic {lo}..{hi}");
+    }
+}
+
 /// Issue #138: DNGs converted by Adobe software carry their camera profile's hue/saturation map and
 /// look table; we read them (and render with them). Camera-written DNGs here carry none.
 #[test]

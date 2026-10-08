@@ -274,6 +274,68 @@ fn run_process_bounded(tag: &str, args: &[&str]) -> (bool, String, String) {
     (status.success(), out, err)
 }
 
+/// CIE76, D65: an independent comparison of sRGB output against the camera JPEG, not a render snapshot.
+fn srgb_lab(p: [u8; 4]) -> [f64; 3] {
+    let [r, g, b] = [p[0], p[1], p[2]].map(|v| {
+        let v = v as f64 / 255.0;
+        if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+    });
+    let [x, y, z] = [
+        (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047,
+        0.2126729 * r + 0.7151522 * g + 0.0721750 * b,
+        (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883,
+    ]
+    .map(|v| if v > (6.0f64 / 29.0).powi(3) { v.cbrt() } else { v / (3.0 * (6.0f64 / 29.0).powi(2)) + 4.0 / 29.0 });
+    [116.0 * y - 16.0, 500.0 * (x - y), 200.0 * (y - z)]
+}
+
+#[test]
+fn corpus_d7100_cli_renders_plausible_colour_and_keeps_exposure_editable() {
+    use lightcraft_raster::resample::{Filter, resize};
+    let dir = std::env::var_os("LIGHTCRAFT_CORPUS")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
+        .join("raw");
+    for mode in ["lossless12", "lossless14", "lossy12", "lossy14"] {
+        let path = dir.join(format!("nef-nikon-d7100-{mode}.nef"));
+        let Ok(bytes) = std::fs::read(&path) else {
+            eprintln!("skip: {} absent", path.display());
+            continue;
+        };
+        let out = tmp(&format!("d7100-{mode}.png"));
+        let (ok, stdout, stderr) = run_process_bounded(mode, &["render", path.to_str().unwrap(), "-o", out.to_str().unwrap(), "--size", "1200"]);
+        assert!(ok, "D7100 {mode}: {stdout}; {stderr}");
+        let decoded = lightcraft_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
+        assert_eq!((decoded.width, decoded.height), (1200, 799));
+        let render = decoded.to_srgb8();
+        let reference = lightcraft_engine::files::embedded_preview_srgb(&bytes, 384).unwrap();
+        let small = |img: &lightcraft_raster::Rgba8| resize(&img.to_linear(), 200, 133, Filter::Box).to_srgb8();
+        let (a, b) = (small(&render), small(&reference));
+        let (mut de, mut dl) = (0.0, 0.0);
+        for (x, y) in a.data.iter().zip(&b.data) {
+            let (x, y) = (srgb_lab(*x), srgb_lab(*y));
+            de += x.iter().zip(y).map(|(x, y)| (x - y).powi(2)).sum::<f64>().sqrt();
+            dl += x[0] - y[0];
+        }
+        let (de, dl) = (de / a.data.len() as f64, dl / a.data.len() as f64);
+        eprintln!("D7100 {mode}: mean CIE76 {de:.2}, signed lightness {dl:.2}");
+        // A plausibility/regression ceiling, not a claim of calibrated colour or Lightroom parity.
+        assert!(de < 15.0 && dl.abs() < 4.0, "D7100 {mode}: colour/lightness regression ({de}, {dl})");
+        if mode == "lossless14" {
+            let edited = tmp("d7100-edited.png");
+            let (ok, stdout, stderr) = run_process_bounded(
+                "d7100-exposure",
+                &["render", path.to_str().unwrap(), "-o", edited.to_str().unwrap(), "--size", "1200", "--set", "light.exposure=1"],
+            );
+            assert!(ok, "{stdout}; {stderr}");
+            assert!(mean(&edited) > mean(&out) + 8.0, "exposure must change exported pixels");
+            std::fs::remove_file(edited).unwrap();
+        }
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "D7100 {mode}: original changed");
+        std::fs::remove_file(out).unwrap();
+    }
+}
+
 #[test]
 fn preset_import_rejects_deep_nesting_without_aborting() {
     let path = tmp("deep.lrtemplate");

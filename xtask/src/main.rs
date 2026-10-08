@@ -360,6 +360,23 @@ const RAW_SAMPLES: &[(&str, &str)] = &[
         "nef-nikon-d7500-lossless12.nef",
         "https://raw.pixls.us/getfile.php/1532/nice/Nikon%20-%20D7500%20-%2012bit%2012bit%20compressed%20%28Lossless%29%20%283:2%29.NEF",
     ),
+    // D7100 sources and published SHA-256 digests: docs/camera-preview-colour.md.
+    (
+        "nef-nikon-d7100-lossless14.nef",
+        "https://raw.pixls.us/getfile.php/1855/nice/Nikon%20-%20D7100%20-%2014bit%2014bit%20compressed%20%28Lossless%29%20%283:2%29.NEF",
+    ),
+    (
+        "nef-nikon-d7100-lossless12.nef",
+        "https://raw.pixls.us/getfile.php/1856/nice/Nikon%20-%20D7100%20-%2012bit%2012bit%20compressed%20%28Lossless%29%20%283:2%29.NEF",
+    ),
+    (
+        "nef-nikon-d7100-lossy14.nef",
+        "https://raw.pixls.us/getfile.php/1857/nice/Nikon%20-%20D7100%20-%2014bit%2014bit%20compressed%20%28Lossy%20%28type%202%29%29%20%283:2%29.NEF",
+    ),
+    (
+        "nef-nikon-d7100-lossy12.nef",
+        "https://raw.pixls.us/getfile.php/1858/nice/Nikon%20-%20D7100%20-%2012bit%2012bit%20compressed%20%28Lossy%20%28type%202%29%29%20%283:2%29.NEF",
+    ),
     (
         "nef-nikon-d7500-lossless14.nef",
         "https://raw.pixls.us/getfile.php/1534/nice/Nikon%20-%20D7500%20-%2014bit%2014bit%20compressed%20%28Lossless%29%20%283:2%29.NEF",

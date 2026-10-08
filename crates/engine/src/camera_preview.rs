@@ -800,6 +800,27 @@ mod tests {
         assert!(info.relative_wb && info.as_shot_temp == 6500.0 && info.as_shot_tint == 0.0);
     }
 
+    #[test]
+    fn corpus_d7100_modes_keep_raw_editing_and_a_file_local_look() {
+        let dir = std::env::var_os("LIGHTCRAFT_CORPUS")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
+            .join("raw");
+        for mode in ["lossless12", "lossless14", "lossy12", "lossy14"] {
+            let path = dir.join(format!("nef-nikon-d7100-{mode}.nef"));
+            let Ok(bytes) = std::fs::read(&path) else {
+                eprintln!("skip: {} absent", path.display());
+                continue;
+            };
+            let (img, info) = crate::files::load_bytes(&bytes, 400).unwrap();
+            assert!(info.raw, "D7100 {mode}: must develop sensor data");
+            assert!(info.camera_tone.is_some(), "D7100 {mode}: file-local fit rejected");
+            assert!(info.relative_wb && info.as_shot_temp == 6500.0 && info.as_shot_tint == 0.0);
+            assert_eq!((img.width, img.height), (400, 266));
+            assert!(img.data.iter().flatten().all(|v| v.is_finite()));
+        }
+    }
+
     /// A public DC-FZ1000 II RW2 shot at 4:3 on its 3:2 sensor (skipped without the corpus): the default crop is 4:3
     /// while the embedded JPEG shows the whole sensor; the look is still fitted, against the matching part of it.
     #[test]
