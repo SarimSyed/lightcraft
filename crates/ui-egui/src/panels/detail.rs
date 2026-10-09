@@ -1526,7 +1526,8 @@ pub(crate) fn filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
             }
             let resp = ui.interact(cr, egui::Id::new(("film", id.0)), Sense::click());
             register(ui.ctx(), format!("film:{}", id.0), cr);
-            let sel = Some(*id) == active;
+            let sel = app.session.selection.contains(*id);
+            let is_active = Some(*id) == active;
             let p = ui.painter();
             if sel {
                 p.rect_filled(cr, 0.0, t.cell_selected);
@@ -1536,7 +1537,8 @@ pub(crate) fn filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
             let names = app.ui.settings.film_names;
             if let Some(ph) = app.session.catalog.photo(*id).filter(|_| names) {
                 let name = ph.file_name.rsplit_once('.').map(|(n, _)| n).unwrap_or(&ph.file_name);
-                let short: String = if name.len() > 14 { format!("{}…", &name[..13]) } else { name.to_string() };
+                let short: String =
+                    if name.chars().count() > 14 { format!("{}…", name.chars().take(13).collect::<String>()) } else { name.to_string() };
                 p.text(pos2(cr.left() + 8.0, cr.top() + 10.0), Align2::LEFT_CENTER, short, t.font(10.0), t.text_dim);
                 p.text(pos2(cr.right() - 8.0, cr.top() + 10.0), Align2::RIGHT_CENTER, &ph.format, t.semibold(8.5), t.text_dim);
             }
@@ -1548,7 +1550,12 @@ pub(crate) fn filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
                 let fr = Rect::from_center_size(img_area.center(), vec2(tw as f32 * s, th as f32 * s));
                 p.image(tex.tex.id(), fr, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 if sel {
-                    p.rect_stroke(fr, 0.0, Stroke::new(1.5, Color32::WHITE), StrokeKind::Outside);
+                    p.rect_stroke(
+                        fr,
+                        0.0,
+                        Stroke::new(if is_active { 1.5 } else { 1.0 }, if is_active { Color32::WHITE } else { t.text_dim }),
+                        StrokeKind::Outside,
+                    );
                 }
                 if app.ui.settings.film_badges
                     && let Some(ph) = app.session.catalog.photo(*id)
@@ -1571,6 +1578,9 @@ pub(crate) fn filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
                     "toggle"
                 } else if m.shift {
                     "range"
+                } else if app.ui.view == crate::state::ViewMode::Survey {
+                    // Keep the surveyed group; an existing thumbnail only becomes active.
+                    "add"
                 } else {
                     "replace"
                 };

@@ -1285,5 +1285,8 @@
   "Processing AI Denoise…": "Processando redução de ruído com IA…",
   "Metal was unavailable. Processing completed on CPU.": "O Metal estava indisponível. O processamento foi concluído na CPU.",
   "Prepare Preview": "Preparar prévia",
-  "Apply": "Aplicar"
+  "Apply": "Aplicar",
+  "Click a thumbnail to change the candidate. The select stays fixed.": "Clique em uma miniatura para mudar a candidata. A foto de referência permanece fixa.",
+  "Click thumbnails to add photos. Click a photo to make it active; × removes it.": "Clique nas miniaturas para adicionar fotos. Clique em uma foto para ativá-la; × a remove.",
+  "Survey selected photos (N)": "Comparar fotos selecionadas (N)"
 }

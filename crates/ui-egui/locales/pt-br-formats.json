@@ -118,5 +118,6 @@
   "{} spot(s) on this photo": "{} ponto(s) nesta foto",
   "· {dups} already in the library": "· {dups} já na biblioteca",
   "· {n} photo{}": "· {n} foto{:.0}",
-  "… and {more} more": "… e mais {more}"
+  "… and {more} more": "… e mais {more}",
+  "Survey · {n} selected": "Comparação múltipla · {n} selecionadas"
 }

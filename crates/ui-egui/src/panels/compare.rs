@@ -2,7 +2,7 @@
 //! pan) and **Survey** (the selected photos tiled). Rating, flag and label keys act on the active
 //! photo only here, and with Auto Advance on they move to the next candidate / photo.
 
-use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
+use egui::{Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use lightcraft_catalog::{Flag, PhotoId};
 use serde_json::{Value, json};
 
@@ -28,7 +28,17 @@ pub fn compare_pair(app: &mut LightcraftApp) -> Option<(PhotoId, PhotoId)> {
     if let Some((a, b)) = app.ui.compare {
         let (a, b) = (PhotoId(a), PhotoId(b));
         if a != b && exists(app, a) && exists(app, b) {
-            return Some((a, b));
+            // A filmstrip or control-channel selection replaces the candidate while
+            // retaining the select. Clicking either displayed photo only activates it.
+            let active = app.session.active().filter(|id| exists(app, *id)).unwrap_or(b);
+            let candidate = if active == a { b } else { active };
+            if app.session.selection.ids.len() == 1 {
+                select_pair(app, a, candidate, active);
+            } else {
+                // Preserve an explicit group selection (including one prepared for Survey).
+                app.ui.compare = Some((a.0, candidate.0));
+            }
+            return Some((a, candidate));
         }
     }
     let vis = app.session.visible_cloned();
@@ -142,6 +152,18 @@ fn area_and_filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui) -> Rect {
     canvas
 }
 
+/// Keep the view's purpose and selection gesture visible, including with just one photo.
+fn culling_help(ui: &mut egui::Ui, canvas: Rect, title: &str, hint: &str) -> Rect {
+    let t = Tokens::get(ui.ctx());
+    let mut header = ui.new_child(egui::UiBuilder::new().max_rect(canvas.shrink2(vec2(18.0, 8.0))));
+    let response = header.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 12.0;
+        ui.label(egui::RichText::new(title).font(t.semibold(12.0)).color(t.text));
+        ui.label(egui::RichText::new(crate::i18n::tr(hint)).font(t.font(11.5)).color(t.text_label));
+    });
+    Rect::from_min_max(pos2(canvas.left(), (response.response.rect.bottom() + 6.0).min(canvas.bottom())), canvas.max)
+}
+
 /// Draw one photo fitted into `area` (rendered at its display size into `slot`), with its caption
 /// strip below. Returns the image rect and the click/drag response.
 fn photo_tile(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area: Rect, label: &str, zoom: Zoom) -> (Rect, egui::Response) {
@@ -192,7 +214,7 @@ fn photo_tile(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, slot: Slo
     let pt = ui.painter();
     let mut x = cap.left() + 4.0;
     if !label.is_empty() {
-        let g = pt.layout_no_wrap(label.to_string(), t.semibold(12.0), if active { t.text } else { t.text_label });
+        let g = pt.layout_no_wrap(crate::i18n::tr(label).to_string(), t.semibold(12.0), if active { t.text } else { t.text_label });
         pt.galley(pos2(x, cap.center().y - g.size().y / 2.0), g.clone(), t.text);
         x += g.size().x + 10.0;
     }
@@ -243,7 +265,8 @@ pub fn show_compare(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         super::empty_message(ui, canvas, "Nothing to compare", "Select two photos, then choose View → Compare (Shift+C)");
         return;
     };
-    let area = canvas.shrink(18.0);
+    let area =
+        culling_help(ui, canvas, crate::i18n::tr("Compare"), "Click a thumbnail to change the candidate. The select stays fixed.").shrink(18.0);
     let half = (area.width() - 16.0) / 2.0;
     let panes = [
         (sel, Rect::from_min_size(area.min, vec2(half, area.height())), "Select", 0u8),
@@ -300,7 +323,12 @@ pub fn show_survey(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         super::empty_message(ui, canvas, "Nothing to survey", "Select photos, then choose View → Survey (N)");
         return;
     }
-    let area = canvas.shrink(14.0);
+    let title = if app.session.selection.ids.len() > SURVEY_MAX {
+        format!("{} · {}", crate::i18n::tr("Survey"), crate::i18n::tr_format!("Showing {n} of {}", app.session.selection.ids.len(), n = photos.len()))
+    } else {
+        crate::i18n::tr_format!("Survey · {n} selected", n = photos.len())
+    };
+    let area = culling_help(ui, canvas, &title, "Click thumbnails to add photos. Click a photo to make it active; × removes it.").shrink(14.0);
     let cols = survey_columns(photos.len(), area);
     let rows = photos.len().div_ceil(cols);
     let (cw, ch) = (area.width() / cols as f32, area.height() / rows as f32);
@@ -319,9 +347,11 @@ pub fn show_survey(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             app.ui.view = ViewMode::Detail;
         }
         // remove from the survey (deselect) on hover
-        if resp.hovered() && photos.len() > 1 {
+        if ui.input(|input| input.pointer.hover_pos().is_some_and(|pos| cell.contains(pos))) && photos.len() > 1 {
             let xr = Rect::from_min_size(pos2(img.right() - 26.0, img.top() + 6.0), vec2(20.0, 20.0));
             let xresp = ui.interact(xr, egui::Id::new(("survey-x", id.0)), Sense::click()).on_hover_text(crate::i18n::tr("Remove from survey"));
+            xresp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::i18n::tr("Remove from survey")));
+            register(ui.ctx(), format!("icon:surveyRemove:{}", id.0), xr);
             ui.painter().circle_filled(xr.center(), 10.0, Color32::from_black_alpha(if xresp.hovered() { 230 } else { 160 }));
             paint(ui.painter(), xr.shrink(4.0), Icon::Close, t.text);
             if xresp.clicked() {
@@ -329,15 +359,6 @@ pub fn show_survey(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             }
         }
         resp.context_menu(|ui| super::grid::context_menu(app, ui, *id));
-    }
-    let n = photos.len();
-    let msg = if app.session.selection.ids.len() > SURVEY_MAX {
-        crate::i18n::tr_format!("Showing {n} of {}", app.session.selection.ids.len(), n = n)
-    } else {
-        String::new()
-    };
-    if !msg.is_empty() {
-        ui.painter().text(pos2(canvas.right() - 16.0, canvas.top() + 10.0), Align2::RIGHT_TOP, msg, t.font(12.0), t.text_dim);
     }
 }
 

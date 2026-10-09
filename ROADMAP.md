@@ -33,6 +33,8 @@ duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 
 Noise reduction now has procedural noise, colour-edge and brightness checks, cache regressions and CPU/GPU equivalence coverage ([validation notes](docs/noise-reduction.md)). This does not establish Lightroom render fidelity.
 
+Compare and Survey now have pointer-driven regression coverage as well as keyboard checks: thumbnail clicks replace the Compare candidate, and Survey preserves its selected group while adding or removing photos. Survey shows its selected count and usage guidance; it is not limited to four photos.
+
 ### By kind of user
 
 | User | Readiness | What blocks them |

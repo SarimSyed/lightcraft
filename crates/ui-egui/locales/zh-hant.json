@@ -1274,5 +1274,8 @@
   "Processing AI Denoise…": "正在進行 AI 降噪…",
   "Metal was unavailable. Processing completed on CPU.": "Metal 無法使用，已使用 CPU 完成處理。",
   "Prepare Preview": "準備預覽",
-  "Apply": "套用"
+  "Apply": "套用",
+  "Click a thumbnail to change the candidate. The select stays fixed.": "點擊縮圖更換候選相片，左側選定相片保持不變。",
+  "Click thumbnails to add photos. Click a photo to make it active; × removes it.": "點擊縮圖加入相片。點擊相片將其設為目前相片；× 可將其移出比較。",
+  "Survey selected photos (N)": "比較選取的相片（N）"
 }

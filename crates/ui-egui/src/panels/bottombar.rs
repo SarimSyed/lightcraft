@@ -25,7 +25,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         ("squareGrid", Icon::GridSquare, ViewMode::SquareGrid, "Square Grid (G toggles)"),
                         ("detail", Icon::Single, ViewMode::Detail, "Detail (D)"),
                         ("compare", Icon::Compare, ViewMode::Compare, "Compare (Shift+C)"),
-                        ("survey", Icon::Survey, ViewMode::Survey, "Survey (N)"),
+                        ("survey", Icon::Survey, ViewMode::Survey, "Survey selected photos (N)"),
                         ("people", Icon::Subject, ViewMode::People, "People"),
                     ] {
                         if icon_button(ui, id, icon, vec2(32.0, 32.0), app.ui.view == mode, true, tip).clicked() {

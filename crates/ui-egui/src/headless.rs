@@ -329,6 +329,85 @@ mod tests {
         assert_eq!(diff, 0, "{diff} pixels differ between two runs");
     }
 
+    #[test]
+    fn filmstrip_accepts_long_unicode_file_names() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        let mut photo = h.app.session.catalog.photo(h.app.session.active().unwrap()).unwrap().as_ref().clone();
+        photo.id = h.app.session.catalog.alloc_photo_id();
+        photo.file_name = "あいうえおかきくけこさしすせそ.JPG".into();
+        let id = photo.id;
+        h.app.session.commit("Import", lightcraft_catalog::Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [id.0]}}), t);
+        h.request("ui.set", json!({"view": "detail"}), t);
+        h.settle(SETTLE);
+        let reply = h.request("ui.clickWidget", json!({"id": format!("film:{}", id.0)}), t);
+        assert_eq!(reply["ok"], true, "{reply}");
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["active"], id.0);
+        h.settle(SETTLE);
+    }
+
+    #[test]
+    fn compare_thumbnail_click_replaces_candidate_and_keeps_select() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().map(|id| id.0).collect();
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [ids[0]]}}), t);
+        let reply = h.request("ui.clickWidget", json!({"id": "icon:compare"}), t);
+        assert_eq!(reply["ok"], true, "{reply}");
+        h.settle(SETTLE);
+        let reply = h.request("ui.clickWidget", json!({"id": format!("film:{}", ids[2])}), t);
+        assert_eq!(reply["ok"], true, "{reply}");
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!([ids[0], ids[2]]));
+        assert_eq!(state["active"], ids[2]);
+        let tiles = h.request("ui.widgets", json!({"filter": "cull:"}), t)["result"].clone();
+        let displayed: Vec<_> = tiles.as_array().unwrap().iter().map(|tile| tile["id"].as_str().unwrap()).collect();
+        assert_eq!(displayed, vec![format!("cull:{}", ids[0]), format!("cull:{}", ids[2])]);
+        h.request("ui.clickWidget", json!({"id": format!("cull:{}", ids[0])}), t);
+        h.request("ui.clickWidget", json!({"id": format!("film:{}", ids[3])}), t);
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!([ids[0], ids[3]]));
+        assert_eq!(state["active"], ids[3]);
+        h.settle(SETTLE);
+    }
+
+    #[test]
+    fn survey_thumbnail_clicks_build_a_group_and_removal_keeps_the_other_photos() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().map(|id| id.0).collect();
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [ids[0]]}}), t);
+        let reply = h.request("ui.clickWidget", json!({"id": "icon:survey"}), t);
+        assert_eq!(reply["ok"], true, "{reply}");
+        for id in &ids[1..4] {
+            h.request("ui.clickWidget", json!({"id": format!("film:{id}")}), t);
+        }
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!(ids[..4]));
+        let tiles = h.request("ui.widgets", json!({"filter": "cull:"}), t)["result"].clone();
+        let displayed: Vec<_> = tiles.as_array().unwrap().iter().map(|tile| tile["id"].as_str().unwrap().to_owned()).collect();
+        assert_eq!(displayed, ids[..4].iter().map(|id| format!("cull:{id}")).collect::<Vec<_>>());
+        // Revisiting a selected thumbnail activates it without collapsing the survey.
+        h.request("ui.clickWidget", json!({"id": format!("film:{}", ids[1])}), t);
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!(ids[..4]));
+        assert_eq!(state["active"], ids[1]);
+        h.request("ui.hoverWidget", json!({"id": format!("cull:{}", ids[2])}), t);
+        let reply = h.request("ui.clickWidget", json!({"id": format!("icon:surveyRemove:{}", ids[2])}), t);
+        assert_eq!(reply["ok"], true, "{reply}");
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!([ids[0], ids[1], ids[3]]));
+        h.request("ui.clickWidget", json!({"id": format!("film:{}", ids[3]), "cmd": true}), t);
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!([ids[0], ids[1]]));
+        h.request("ui.clickWidget", json!({"id": format!("film:{}", ids[4]), "shift": true}), t);
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!(ids[..5]));
+        h.settle(SETTLE);
+    }
+
     /// Keyboard culling: Compare (rating keys hit the candidate, arrows move it, auto-advance),
     /// Survey (keys hit the active photo only), and auto-advance in Detail.
     #[test]
