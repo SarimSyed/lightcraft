@@ -11,7 +11,7 @@ use serde_json::json;
 
 use crate::icons::{Icon, paint};
 use crate::theme::Tokens;
-use crate::widgets::{divider, icon_button, register, slider};
+use crate::widgets::{divider, icon_button, register, slider, text_button};
 use crate::{HoverPreview, LightcraftApp};
 
 /// Long edge of preset thumbnails (px).
@@ -50,10 +50,33 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                 }
             });
             divider(ui);
-            // amount slider (applies to the last applied preset)
-            let amt_id = egui::Id::new("preset-amount");
-            let last: Option<(String, f64)> = ui.data(|d| d.get_temp(amt_id));
-            if let Some((pid, amount)) = last.clone() {
+            let status = app.session.execute("preset.status", &json!({})).unwrap_or_default();
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 24, top: 10, bottom: 10 }).show(ui, |ui| {
+                let removable = status["removable"].as_bool().unwrap_or(false);
+                let response = ui
+                    .add_enabled_ui(removable, |ui| text_button(ui, "presetRemove", "Remove Preset Effects", false))
+                    .inner
+                    .on_hover_text(crate::i18n::tr("Remove presets from this photo; keep manual edits."));
+                if response.clicked() {
+                    match app.run("preset.remove", json!({})) {
+                        Ok(_) => app.toast(ui.ctx(), crate::i18n::tr("Preset effects removed; manual edits kept.")),
+                        Err(e) => app.toast_error(ui.ctx(), e),
+                    }
+                    app.hover_preview = None;
+                    ui.data_mut(|d| d.remove::<(lightcraft_catalog::PhotoId, Preset, String)>(egui::Id::new("last-preset-hover")));
+                }
+                if status.get("error").is_some_and(|v| !v.is_null()) {
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(crate::i18n::tr("Older preset history is incomplete. Restore a pre-preset version or undo the preset."))
+                            .font(t.font(11.5))
+                            .color(t.text_label),
+                    );
+                }
+            });
+            divider(ui);
+            // Persisted, photo-local amount; changing it never consumes the global undo stack.
+            if let Some(amount) = status["amount"].as_f64() {
                 let spec = ControlSpec {
                     id: "presetAmount",
                     label: "Amount",
@@ -66,11 +89,10 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                     track: Track::Plain,
                 };
                 let out = slider(ui, &spec, amount, true, None);
-                if let Some(v) = out.value {
-                    // re-apply from the pre-preset state: undo last preset step then apply with the new amount
-                    let _ = app.run("edit.undo", json!({}));
-                    let _ = app.run("preset.apply", json!({"id": pid, "amount": v}));
-                    ui.data_mut(|d| d.insert_temp(amt_id, (pid, v)));
+                if let Some(v) = out.value
+                    && let Err(e) = app.run("preset.amount", json!({"amount": v}))
+                {
+                    app.toast_error(ui.ctx(), e);
                 }
                 divider(ui);
             }
@@ -120,7 +142,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                         let (pid, name, fav) = (pr.id.clone(), crate::i18n::builtin_label(&pr.name, pr.builtin).to_string(), pr.favorite);
                         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
                         register(ui.ctx(), format!("preset:{pid}"), r);
-                        let is_last = last.as_ref().is_some_and(|(l, _)| *l == pid);
+                        let is_last = status["preset"].as_str().is_some_and(|id| id == pid);
                         if is_last {
                             ui.painter().rect_filled(r, 0.0, t.tool_active);
                         } else if resp.hovered() {
@@ -157,11 +179,14 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
                                 ui.data_mut(|d| d.insert_temp(egui::Id::new("last-preset-hover"), (id, pr.clone(), label)));
                             }
                         }
-                        if resp.clicked() {
-                            let _ = app.run("preset.apply", json!({"id": pid, "amount": 100}));
-                            ui.data_mut(|d| d.insert_temp(amt_id, (pid.clone(), 100.0)));
+                        if resp.clicked()
+                            && let Some(id) = active
+                        {
+                            match app.run("preset.apply", json!({"id": pid, "amount": 100, "ids": [id.0]})) {
+                                Ok(_) => app.toast(ui.ctx(), crate::i18n::tr_format!("Preset: {name}", name = name)),
+                                Err(e) => app.toast_error(ui.ctx(), e),
+                            }
                             ui.data_mut(|d| d.remove::<(lightcraft_catalog::PhotoId, Preset, String)>(egui::Id::new("last-preset-hover")));
-                            app.toast(ui.ctx(), crate::i18n::tr_format!("Preset: {name}", name = name));
                         }
                         let (builtin, group) = (pr.builtin, pr.group.clone());
                         resp.context_menu(|ui| {

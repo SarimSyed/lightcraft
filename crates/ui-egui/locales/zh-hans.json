@@ -1277,5 +1277,9 @@
   "Apply": "应用",
   "Click a thumbnail to change the candidate. The select stays fixed.": "点击缩略图更换候选照片，左侧选定照片保持不变。",
   "Click thumbnails to add photos. Click a photo to make it active; × removes it.": "点击缩略图添加照片。点击照片将其设为当前照片；× 可将其移出比较。",
-  "Survey selected photos (N)": "比较选中的照片（N）"
+  "Survey selected photos (N)": "比较选中的照片（N）",
+  "Remove Preset Effects": "移除预设效果",
+  "Remove presets from this photo; keep manual edits.": "移除此照片的预设效果，保留手动编辑。",
+  "Preset effects removed; manual edits kept.": "已移除预设效果，保留手动编辑。",
+  "Older preset history is incomplete. Restore a pre-preset version or undo the preset.": "旧预设历史不完整。请恢复应用预设前的版本，或撤销预设。"
 }

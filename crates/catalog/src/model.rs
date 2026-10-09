@@ -203,6 +203,27 @@ pub struct Version {
 pub struct HistoryStep {
     pub label: String,
     pub settings: Arc<DevelopSettings>,
+    /// Photo-local preset provenance, independent of the undo stack and retained when history
+    /// is trimmed. Manual edits update `without`; preset applications leave it intact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preset: Option<PresetEdit>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PresetEdit {
+    pub without: Arc<DevelopSettings>,
+    pub last: Option<AppliedPreset>,
+    /// An older application has no retained baseline. New presets/edits still work, but removing
+    /// all presets must be refused rather than presenting an inferred baseline as successful.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub incomplete: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AppliedPreset {
+    pub preset: lightcraft_develop::Preset,
+    pub before: Arc<DevelopSettings>,
+    pub amount: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

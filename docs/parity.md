@@ -64,7 +64,7 @@ Take the first one nobody is working on.
    "lossy after split" NEF, Canon sRAW; HEIC/AVIF decode. Clean-room, from prose descriptions only (see
    `crates/raw/src/vendor/nefc.rs` for how compressed NEF was done). Until decoded, such photos are `preview_only`.
 3. **LR-IMP-CAMERA-COVERAGE** (P0): per-model verification; D7100: four CC0 12/14-bit lossless/lossy NEFs now have decode/load/CLI colour regression coverage (docs/camera-preview-colour.md); grow the CC0 corpus and fix per-model bugs (like the CR2
-   colour-filter layout, fixed in #85 by reading the file's own tag).
+   colour-filter layout, fixed in #85 by reading the file's own tag). Two private ISO 6400 D7100 NEFs additionally have equal-size preview/export consistency checks; visible differences from the camera JPEG remain (docs/camera-preview-colour.md).
 4. **LR-BEHAV-RENDER-FIDELITY** (P1): a side-by-side fidelity suite against Lightroom renders (kept local in `plan/`),
    then tune tone, highlights, texture/clarity/dehaze, NR and sharpening against it. NR now has procedural noise/edge/brightness and cache/CPU-GPU checks (`docs/noise-reduction.md`); curve chart gestures have control/undo regressions, and Compare/Survey have pointer-selection and keyboard-culling regressions. Lightroom comparisons remain open.
 5. **LR-EDIT-OPTICS-PROFILE** (P1): a lens-profile database of our own (embedded DNG/maker corrections work today).
@@ -354,10 +354,10 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-PRE-PANEL | Presets panel | P0 | ✅ | `cmd:panel.presets`, `cmd:preset.apply`, `crates/ui-egui/src/panels/presets.rs` | grouped list with amount; resting on a preset previews it in the loupe (no history entry); optional live thumbnails (⋯ → Show Thumbnails) |
+| LR-PRE-PANEL | Presets panel | P0 | ✅ | `cmd:panel.presets`, `cmd:preset.apply`, `cmd:preset.remove`, `cmd:preset.status`, `crates/ui-egui/src/panels/presets.rs`, `docs/presets.md` | grouped list with photo-local amount and Remove Preset Effects (keeps manual edits); editor preset clicks affect the active photo; resting on a preset previews it in the loupe (no history entry); optional live thumbnails (⋯ → Show Thumbnails); old histories need a retained pre-preset snapshot for removal |
 | LR-PRE-CREATE | Create preset | P0 | ✅ | `cmd:dialog.createPreset`, `cmd:preset.create` (`groups`) | name, group and a checklist of settings groups (crop, masks, remove, red eye off by default; All / None) |
 | LR-PRE-MANAGE | Manage presets | P1 | ✅ | `cmd:preset.delete`, `cmd:preset.favorite`, `cmd:preset.import`, `cmd:preset.export`, `cmd:preset.rename`, `cmd:preset.update`, `cmd:preset.move` | rename, update with current settings, move to a group (existing or new); no hiding of groups |
-| LR-PRE-AMOUNT | Preset amount | P1 | ✅ | `cmd:preset.apply` (`amount` 0–200) | |
+| LR-PRE-AMOUNT | Preset amount | P1 | ✅ | `cmd:preset.apply`, `cmd:preset.amount` (`amount` 0–200), `crates/engine/tests/presets.rs` | persisted per photo; preserves later manual overrides and never consumes global Undo; older applications need removal and reapplication to enable amount |
 | LR-PRE-ADAPTIVE | Adaptive presets | P2 | ⬜ | | |
 | LR-PRE-PREMIUM | Built-in presets (own) | P2 | ✅ | `crates/engine/src/presets.rs` | 41 own-authored presets in 10 groups (Color, Film, B&W incl. toners, Portrait, Landscape, Urban, Food, Seasons, Vintage, Style) |
 | LR-PRE-RECOMMENDED | Community recommendations | OOS | 🚫 | | |

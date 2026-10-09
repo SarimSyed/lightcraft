@@ -1060,5 +1060,9 @@
   "Apply": "適用",
   "Click a thumbnail to change the candidate. The select stays fixed.": "サムネイルをクリックすると候補を変更します。選択側の写真は固定されます。",
   "Click thumbnails to add photos. Click a photo to make it active; × removes it.": "サムネイルをクリックして写真を追加します。写真をクリックして選択し、×で一覧から外します。",
-  "Survey selected photos (N)": "選択した写真を一覧比較（N）"
+  "Survey selected photos (N)": "選択した写真を一覧比較（N）",
+  "Remove Preset Effects": "プリセットの効果を解除",
+  "Remove presets from this photo; keep manual edits.": "この写真のプリセットを解除し、手動編集は保持します。",
+  "Preset effects removed; manual edits kept.": "プリセットの効果を解除し、手動編集を保持しました。",
+  "Older preset history is incomplete. Restore a pre-preset version or undo the preset.": "古いプリセットの履歴が不足しています。適用前のバージョンを復元するか、適用を取り消してください。"
 }

@@ -1288,5 +1288,9 @@
   "Apply": "Aplicar",
   "Click a thumbnail to change the candidate. The select stays fixed.": "Clique em uma miniatura para mudar a candidata. A foto de referência permanece fixa.",
   "Click thumbnails to add photos. Click a photo to make it active; × removes it.": "Clique nas miniaturas para adicionar fotos. Clique em uma foto para ativá-la; × a remove.",
-  "Survey selected photos (N)": "Comparar fotos selecionadas (N)"
+  "Survey selected photos (N)": "Comparar fotos selecionadas (N)",
+  "Remove Preset Effects": "Remover efeitos dos presets",
+  "Remove presets from this photo; keep manual edits.": "Remove os presets desta foto e mantém as edições manuais.",
+  "Preset effects removed; manual edits kept.": "Efeitos dos presets removidos; edições manuais mantidas.",
+  "Older preset history is incomplete. Restore a pre-preset version or undo the preset.": "O histórico do preset antigo está incompleto. Restaure uma versão anterior ao preset ou desfaça sua aplicação."
 }

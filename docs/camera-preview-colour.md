@@ -74,6 +74,20 @@ The tests skip absent files, as other corpus tests do; an absent corpus is not v
 | `nef-nikon-d7100-lossy14.nef` | [1857](https://raw.pixls.us/getfile.php/1857/nice/Nikon%20-%20D7100%20-%2014bit%2014bit%20compressed%20%28Lossy%20%28type%202%29%29%20%283:2%29.NEF) | `b9e1ac6c38eb06a9d296bbafe81ca403a7f1520d61735603cb238b9ae6a35fce` |
 | `nef-nikon-d7100-lossy12.nef` | [1858](https://raw.pixls.us/getfile.php/1858/nice/Nikon%20-%20D7100%20-%2012bit%2012bit%20compressed%20%28Lossy%20%28type%202%29%29%20%283:2%29.NEF) | `48b86be680b631291e193660daeece2ca1515583c9780ab9fcff2ea80628d3d1` |
 
+### Private D7100 high-ISO check (2026-10-09)
+
+Two privately supplied portrait-orientation forest NEFs (D7100, ISO 6400, 4020×6036) decode sensor
+data and accept the existing camera-look fit. No decoder or colour-fitting change was made. At
+1600 px, the public engine preview and default sRGB PNG export are pixel-identical for both files.
+That establishes preview/export consistency at equal size/settings, not agreement with Nikon's JPEG.
+
+The camera JPEG and export were reduced with encoded-sRGB box filtering to 133×200 and compared
+in CIE76/D65. Mean ΔE was 5.96 and 8.15; mean signed ΔL* (export minus JPEG) was −0.26 and −1.92.
+These differ in resampling from the earlier corpus table and are not directly comparable to it.
+Foliage colour, local contrast and high-ISO noise differ visibly; the second render is darker overall.
+The current global matrix/table/tone estimate does not reproduce Nikon's local processing. Neither
+private original nor its rendered pixels are committed. Original SHA-256 digests were unchanged.
+
 ### Panasonic RW2
 
 The same fit, gates and relative WB apply to Panasonic RW2, Leica RWL and the older Panasonic RAW files (all decode as `RawFormat::Rw2`; white balance from tags `0x0024`–`0x0026`). Their embedded JPEG (`JpgFromRaw`, 1920 px wide) always shows the whole active area, while the default crop is the aspect ratio set in the camera (4:3 on the 3:2 sensors, 1:1, 16:9, 2.71 on the S1R II…); when the preview matches the active area rather than the crop, the reference is cropped to the default crop before fitting.

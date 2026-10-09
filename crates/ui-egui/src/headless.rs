@@ -506,6 +506,39 @@ mod tests {
         h.settle(SETTLE);
     }
 
+    #[test]
+    fn preset_removal_and_amount_follow_the_active_photo() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view":"detail","presets":true}), t);
+        let first = h.app.session.active().unwrap();
+        let second = h.app.session.catalog.photos().find(|p| p.id != first).unwrap().id;
+        let other_before = h.app.session.develop_of(second).unwrap();
+        h.request("engine.execute", json!({"command":"library.select","params":{"ids":[first.0,second.0],"active":first.0}}), t);
+        h.request("ui.clickWidget", json!({"id":"preset:lc.bw-high-contrast"}), t);
+        assert_eq!(h.app.session.develop_of(second).unwrap(), other_before, "preset click changes only the active photo");
+        h.request("engine.execute", json!({"command":"develop.set","params":{"control":"effects.clarity","value":23}}), t);
+        let applied = h.app.session.develop_of(first).unwrap();
+        h.request("engine.execute", json!({"command":"library.select","params":{"ids":[second.0],"active":second.0}}), t);
+        h.step();
+        assert!(
+            h.request("ui.widgets", json!({"filter":"slider:presetAmount"}), t)["result"].as_array().unwrap().is_empty(),
+            "amount must not follow the previous photo"
+        );
+        let other = h.app.session.develop_of(second).unwrap();
+        h.request("engine.execute", json!({"command":"library.select","params":{"ids":[first.0,second.0],"active":first.0}}), t);
+        h.step();
+        assert!(!h.request("ui.widgets", json!({"filter":"slider:presetAmount"}), t)["result"].as_array().unwrap().is_empty());
+        let reply = h.request("ui.clickWidget", json!({"id":"button:presetRemove"}), t);
+        assert_eq!(reply["ok"], true, "{reply}");
+        let removed = h.app.session.develop_of(first).unwrap();
+        assert_eq!(removed.treatment, lightcraft_develop::Treatment::Color);
+        assert_eq!(removed.effects.clarity, 23.0);
+        assert_eq!(h.app.session.develop_of(second).unwrap(), other);
+        h.request("engine.execute", json!({"command":"edit.undo"}), t);
+        assert_eq!(h.app.session.develop_of(first).unwrap(), applied);
+    }
+
     /// Presets column: resting on a preset previews it in the loupe without a history entry;
     /// thumbnails are variant renders; Create Preset includes only the checked groups.
     #[test]

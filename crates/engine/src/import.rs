@@ -897,11 +897,17 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     }
                 }
                 if let Some(preset) = &opts.preset {
+                    let without = crate::preset_edits::state(&p).map_or_else(|| p.develop.clone(), |p| p.without);
+                    let provenance = lightcraft_catalog::PresetEdit {
+                        without,
+                        last: Some(lightcraft_catalog::AppliedPreset { preset: preset.clone(), before: p.develop.clone(), amount: 1.0 }),
+                        incomplete: false,
+                    };
                     let d = std::sync::Arc::new(preset.apply(&p.develop, 1.0));
                     let label = format!("Preset: {}", preset.name);
                     p.develop = d.clone();
                     p.edited = Some(now.clone());
-                    p.history.push(lightcraft_catalog::HistoryStep { label, settings: d });
+                    p.history.push(lightcraft_catalog::HistoryStep { label, settings: d, preset: Some(provenance) });
                 }
                 report.imported.push(id.0);
                 p.local = opts.local;

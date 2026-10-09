@@ -30,6 +30,7 @@ pub mod media;
 pub mod memory;
 pub mod merge;
 pub mod originals;
+mod preset_edits;
 pub mod preset_import;
 pub mod preset_luminar;
 pub mod presets;
@@ -552,9 +553,9 @@ impl Session {
 
     /// The op that sets a photo's develop settings and appends a History entry (for batches).
     pub fn develop_op(&self, id: PhotoId, settings: DevelopSettings, label: &str) -> Option<Op> {
-        self.catalog.photo(id)?;
+        let photo = self.catalog.photo(id)?;
         let settings = Arc::new(settings);
-        let step = lightcraft_catalog::HistoryStep { label: label.into(), settings: settings.clone() };
+        let step = preset_edits::manual_step(photo, settings.clone(), label);
         Some(Op::Batch {
             ops: vec![Op::SetDevelop { id, settings, label: label.into(), edited: Some((self.clock)()) }, Op::PushHistory { id, step }],
         })

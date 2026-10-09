@@ -7,6 +7,9 @@
   preserving RAW editing & full-resolution export instead of using embedded JPEG previews.
 
 ### Presets and profiles
+- Remove Preset Effects in the Presets panel or Photo menu keeps manual edits and is undoable.
+  Preset Amount is saved per photo and no longer undoes an unrelated edit. Editor preset clicks
+  affect only the active photo. Older histories need a retained pre-preset snapshot for removal.
 - Import presets from other editors: XMP presets, classic `.lrtemplate` files, "DNG presets" from mobile apps and `.zip`
   bundles of any of these — whole folders at once, grouped by pack. Masks inside presets come along.
 - Luminar looks: `.lmp` files and `.mplumpack` collections import as presets (grouped by collection); the sliders

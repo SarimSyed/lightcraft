@@ -756,12 +756,56 @@ pub fn specs() -> Vec<CommandSpec> {
             let preset = s.presets.iter().find(|x| x.id == pid).cloned().ok_or_else(|| bad("preset.apply", format!("unknown preset `{pid}`")))?;
             let amount = f64_or(p, "amount", 100.0).clamp(0.0, 200.0) / 100.0;
             let ids = s.targets(p);
-            let ops = ids
-                .iter()
-                .filter_map(|id| s.develop_of(*id).map(|d| (*id, d)))
-                .filter_map(|(id, d)| s.develop_op(id, preset.apply(&d, amount), &format!("Preset: {}", preset.name)))
-                .collect::<Vec<_>>();
+            let mut ops = Vec::new();
+            for id in ids {
+                let Some(photo) = s.catalog.photo(id) else { continue };
+                let prior = crate::preset_edits::state(photo);
+                let incomplete = prior.as_ref().is_some_and(|p| p.incomplete);
+                let without = prior.map_or_else(|| photo.develop.clone(), |p| p.without);
+                let state = lightcraft_catalog::PresetEdit {
+                    without,
+                    last: Some(lightcraft_catalog::AppliedPreset { preset: preset.clone(), before: photo.develop.clone(), amount }),
+                    incomplete,
+                };
+                ops.extend(crate::preset_edits::op(s, id, preset.apply(&photo.develop, amount), &format!("Preset: {}", preset.name), Some(state)));
+            }
             s.commit(&format!("Preset: {}", preset.name), Op::Batch { ops })?;
+            ok()
+        }),
+        cmd!("preset.remove", "Remove Preset Effects", ["Photo"], None, "{} — active photo only; keeps manual edits", has_active, |s, _| {
+            let id = active(s, "preset.remove")?;
+            let photo = s.catalog.photo(id).ok_or_else(|| bad("preset.remove", "no photo"))?;
+            let Some(state) = crate::preset_edits::state(photo) else { return ok() };
+            if state.incomplete {
+                return Err(bad("preset.remove", crate::preset_edits::INCOMPLETE));
+            }
+            let op = crate::preset_edits::op(s, id, (*state.without).clone(), "Remove Preset Effects", None)
+                .ok_or_else(|| bad("preset.remove", "no photo"))?;
+            s.commit("Remove Preset Effects", op)?;
+            ok()
+        }),
+        cmd!(query "preset.status", "Preset Status", [], None, "{} — active photo's removable effects and amount", always, |s, _| {
+            let state = s.active().and_then(|id| s.catalog.photo(id)).and_then(|p| crate::preset_edits::state(p));
+            match state {
+                Some(p) => Ok(json!({"removable":!p.incomplete, "preset":p.last.as_ref().map(|p| &p.preset.id), "amount":p.last.map(|p| p.amount * 100.0),
+                    "error":p.incomplete.then_some(crate::preset_edits::INCOMPLETE)})),
+                None => Ok(json!({"removable":false})),
+            }
+        }),
+        cmd!("preset.amount", "Preset Amount", [], None, "{amount: 0..200} — active photo only; keeps manual edits", has_active, |s, p| {
+            let amount = f64_req(p, "amount", "preset.amount")?.clamp(0.0, 200.0) / 100.0;
+            let id = active(s, "preset.amount")?;
+            let photo = s.catalog.photo(id).ok_or_else(|| bad("preset.amount", "no photo"))?;
+            let mut state = crate::preset_edits::state(photo).ok_or_else(|| bad("preset.amount", "no applied preset on this photo"))?;
+            let mut last =
+                state.last.clone().ok_or_else(|| bad("preset.amount", "this older preset has no amount provenance; remove it and apply it again"))?;
+            let previous = last.preset.apply(&last.before, last.amount);
+            let next = last.preset.apply(&last.before, amount);
+            let settings = crate::preset_edits::carry(&previous, &photo.develop, &next);
+            last.amount = amount;
+            state.last = Some(last);
+            let op = crate::preset_edits::op(s, id, settings, "Preset Amount", Some(state)).ok_or_else(|| bad("preset.amount", "no photo"))?;
+            s.commit("Preset Amount", op)?;
             ok()
         }),
         cmd!("preset.create", "Create Preset", ["Photo"], None, "{name, group?, groups?: [settingsGroup]}", has_active, |s, p| {
@@ -864,7 +908,11 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("history.clear", "Clear History", [], None, "{} — keeps the current settings as the only step", has_active, |s, _| {
             let id = active(s, "history.clear")?;
             let d = s.develop_of(id).unwrap_or_default();
-            let history = vec![lightcraft_catalog::HistoryStep { label: "Cleared History".into(), settings: d }];
+            let history = vec![lightcraft_catalog::HistoryStep {
+                label: "Cleared History".into(),
+                settings: d,
+                preset: s.catalog.photo(id).and_then(|ph| crate::preset_edits::state(ph)),
+            }];
             s.commit("Clear History", Op::SetHistory { id, history })?;
             ok()
         }),

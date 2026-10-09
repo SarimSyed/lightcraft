@@ -182,5 +182,6 @@ fn op_variants_are_versioned() {
         }
     }
     let newest = since(&Op::SetBrowsed { folder: String::new(), at: None });
-    assert_eq!(newest, VERSION, "the newest op's version must be the current format version");
+    // Fields also advance the format (v3 adds HistoryStep.preset without a new Op variant).
+    assert!(newest <= VERSION, "every op must be covered by the current format version");
 }

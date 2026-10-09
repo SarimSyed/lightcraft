@@ -43,7 +43,7 @@ fn op_for(c: &mut Catalog, kind: u8, a: u8, b: u8) -> Op {
             Op::Batch {
                 ops: vec![
                     Op::SetDevelop { id: pid, settings: settings.clone(), label: "Exposure".into(), edited: Some(format!("t{b}")) },
-                    Op::PushHistory { id: pid, step: HistoryStep { label: "Exposure".into(), settings } },
+                    Op::PushHistory { id: pid, step: HistoryStep { label: "Exposure".into(), settings, preset: None } },
                 ],
             }
         }
@@ -238,7 +238,7 @@ fn push_history_is_bounded_and_invertible() {
     let mut c = Catalog::new();
     let id = c.alloc_photo_id();
     c.apply(Op::AddPhoto { photo: Box::new(Photo::new(id, Source::Demo { scene: 1 }, "a", "JPEG", 1, 1, "t")) }).unwrap();
-    let step = |i: usize| HistoryStep { label: format!("s{i}"), settings: Arc::new(DevelopSettings::default()) };
+    let step = |i: usize| HistoryStep { label: format!("s{i}"), settings: Arc::new(DevelopSettings::default()), preset: None };
     for i in 0..HISTORY_LIMIT + 5 {
         c.apply(Op::PushHistory { id, step: step(i) }).unwrap();
     }

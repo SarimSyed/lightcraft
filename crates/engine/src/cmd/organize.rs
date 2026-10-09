@@ -76,7 +76,7 @@ fn virtual_copy(s: &mut Session, src: PhotoId, name: Option<&str>) -> Result<Opt
     c.copy_of = Some(master);
     c.copy_name = Some(name.map_or_else(|| format!("Copy {n}"), str::to_string));
     c.versions.clear();
-    c.history = vec![HistoryStep { label: "Virtual Copy".into(), settings: c.develop.clone() }];
+    c.history = vec![HistoryStep { label: "Virtual Copy".into(), settings: c.develop.clone(), preset: crate::preset_edits::state(&orig) }];
     c.deleted = false;
     let mut ops = vec![Op::AddPhoto { photo: Box::new(c) }];
     for a in s.catalog.albums().filter(|a| !a.is_smart() && a.photos.contains(&src)) {
