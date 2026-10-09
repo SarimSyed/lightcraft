@@ -321,3 +321,66 @@ Full 24 MP render CPU time was 8,188 versus 7,997 ms, with Vulkan/CPU export
 agreement of max 1 LSB and mean 0.0025 LSB. An initial comparison against an
 older run flagged CPU-time variation; the fresh matched baseline ruled out a
 regression from this change.
+
+
+### Linux Vulkan kernel optimization (2026-10-09)
+
+GPU timestamps on the Radeon RX 9060 XT identified dense matrix products and
+channel normalization as roughly 75% of dispatch time. The matrix kernel now
+reuses each weight across two adjacent output pixels, with a fixed unrolled inner
+reduction. Stride-two 2×2 downsampling uses the same matrix kernel with direct
+coordinate gathering, avoiding im2col buffers. Deep normalization reduces 32
+channel lanes across eight adjacent pixels. A bounded 2,048-entry binding cache
+reuses immutable parameters/bindings between tiles. No feature flag, dependency,
+precision change, new model, tile-size change or processing revision is introduced.
+
+Sequential matched native development-build runs used the same private Nikon
+D7100 ISO 6400 NEF (4020×6036), retained decoded source and Vulkan device. No
+other build or validation ran during either full-image measurement:
+
+| Operation / process measurement | Previous Vulkan | Optimized Vulkan |
+|---|---:|---:|
+| Full Apply, including lossless result storage | 36.99 s | 25.31 s |
+| 512×320 crop including source decode (12 tiles) | 2.53 s | 2.27 s |
+| Peak RSS, decode/preview/Apply/cached renders | 1,442,888 KiB | 1,441,404 KiB |
+| Cached Amount 50 / 100 / 50 at 1024px | 108.4 / 105.7 / 103.2 ms | 110.5 / 123.7 / 110.5 ms |
+
+Full Apply is 32% faster (1.46×). Cached editing still reuses the completed
+correction and shows ordinary timing variation; this change targets inference.
+Retained enhancement memory remains 586,285,440 bytes for this validation workflow.
+The completed crop reported 219,443,616 bytes of GPU model/activation/sentinel/
+parameter buffers. Parameter buffers add at most 98,304 bytes to the existing
+bounded GPU workspace; driver and bind-group bookkeeping are excluded.
+
+Five warmed public 256px tile calls took 32.08–33.01 ms, versus 57.65–58.60 ms
+before optimization. The opt-in 35 ms local budget fails on the original kernel.
+Two untimed calls warm driver compilation and the reusable binding cache; this
+is a steady-tile budget, not a guarantee for model installation/loading or the
+first tile. Reproduce on an otherwise idle physical GPU:
+
+```sh
+LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
+LIGHTCRAFT_NAFNET_GPU_TILE_BUDGET_MS=35 \
+  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+    vulkan_tile_inference_meets_explicit_latency_budget -- --ignored --nocapture --test-threads=1
+```
+
+Independent PyTorch maximum errors remained 4.47e-8 (1×1), 1.49e-7 (padding)
+and 2.38e-7 (overlapping tiles), below 1e-4. Crop/full consistency stayed exact,
+and cancellation and reported CPU fallback passed. Before and Amount zero were
+pixel-identical to the previous Vulkan implementation. At 1024px, full renders
+changed only 17 channel samples at Amount 50 and 12 at Amount 100, by at most one
+8-bit level. Both original NEF checksums remained unchanged. These measurements
+preserve the existing tested photographic behavior; broader camera/high-ISO
+quality and other GPU hardware remain validation gaps.
+
+`cargo xtask ci` passed all seven gates. Real-checkpoint engine and headless UI
+tests also passed with Vulkan explicitly required. The rebuilt native app completed
+both preview (12 tiles) and asynchronous Apply (221 tiles) on the Canon corpus
+photo with no CPU fallback. During Apply, status calls returned in 0.46–32.52 ms;
+the final inspection reported a 0.36 ms frame and an 8.49 ms maximum update.
+A native dialog screenshot review and one confirmation pass checked the completed
+preview/Apply state. The strict ordinary-render benchmark passed with the same
+Nikon lossless-12 corpus fixture: export CPU time was 8,145 versus 7,944 ms,
+GPU export 327 versus 326 ms, and CPU/GPU output agreement stayed at max 1 LSB
+and mean 0.0025 LSB.

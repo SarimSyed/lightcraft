@@ -5,28 +5,60 @@
 @group(0) @binding(3) var<storage, read> weights: array<f32>;
 @group(0) @binding(4) var<storage, read_write> dst: array<f32>;
 var<workgroup> left: array<f32, 256>;
-var<workgroup> right: array<f32, 256>;
+var<workgroup> right: array<f32, 512>;
 var<workgroup> reduction: array<f32, 256>;
 
-// 16x16 matrix tiles, keeping activations and weights resident between layers.
+// Each lane reuses a weight across two adjacent output pixels. The fixed
+// inner reduction is unrolled so shared-memory offsets remain constants.
 @compute @workgroup_size(16,16)
 fn pointwise(@builtin(local_invocation_id) l: vec3<u32>, @builtin(workgroup_id) g: vec3<u32>) {
-    let n = p[1]*p[2]; let c = p[0]; let out = p[3];
-    let pixel = g.x*16+l.x; let channel = g.y*16+l.y;
-    let i = l.y*16+l.x;
-    var sum = 0.0;
+    let down=p[4]==2u;
+    let n=select(p[1]*p[2],(p[1]/2u)*(p[2]/2u),down);
+    let c=select(p[0],p[0]*4u,down); let out=p[3];
+    let pixel=g.x*32+l.x*2; let channel=g.y*16+l.y;
+    let i=l.y*16+l.x; let r=l.y*32+l.x*2;
+    var sum=vec2<f32>(0.0);
     for (var base=0u; base<c; base+=16u) {
-        left[i] = 0.0; right[i] = 0.0;
-        if channel<out && base+l.x<c { left[i] = weights[channel*c+base+l.x]; }
-        if pixel<n && base+l.y<c { right[i] = a[(base+l.y)*n+pixel]; }
+        left[i]=0.0; right[r]=0.0; right[r+1]=0.0;
+        if channel<out && base+l.x<c { left[i]=weights[channel*c+base+l.x]; }
+        if base+l.y<c {
+            if pixel<n { right[r]=matrix_input(base+l.y,pixel,n); }
+            if pixel+1<n { right[r+1]=matrix_input(base+l.y,pixel+1,n); }
+        }
         workgroupBarrier();
-        for (var k=0u; k<16u; k++) { sum += left[l.y*16+k]*right[k*16+l.x]; }
+        sum += left[l.y*16+0u]*vec2<f32>(right[0u+l.x*2],right[1u+l.x*2]);
+        sum += left[l.y*16+1u]*vec2<f32>(right[32u+l.x*2],right[33u+l.x*2]);
+        sum += left[l.y*16+2u]*vec2<f32>(right[64u+l.x*2],right[65u+l.x*2]);
+        sum += left[l.y*16+3u]*vec2<f32>(right[96u+l.x*2],right[97u+l.x*2]);
+        sum += left[l.y*16+4u]*vec2<f32>(right[128u+l.x*2],right[129u+l.x*2]);
+        sum += left[l.y*16+5u]*vec2<f32>(right[160u+l.x*2],right[161u+l.x*2]);
+        sum += left[l.y*16+6u]*vec2<f32>(right[192u+l.x*2],right[193u+l.x*2]);
+        sum += left[l.y*16+7u]*vec2<f32>(right[224u+l.x*2],right[225u+l.x*2]);
+        sum += left[l.y*16+8u]*vec2<f32>(right[256u+l.x*2],right[257u+l.x*2]);
+        sum += left[l.y*16+9u]*vec2<f32>(right[288u+l.x*2],right[289u+l.x*2]);
+        sum += left[l.y*16+10u]*vec2<f32>(right[320u+l.x*2],right[321u+l.x*2]);
+        sum += left[l.y*16+11u]*vec2<f32>(right[352u+l.x*2],right[353u+l.x*2]);
+        sum += left[l.y*16+12u]*vec2<f32>(right[384u+l.x*2],right[385u+l.x*2]);
+        sum += left[l.y*16+13u]*vec2<f32>(right[416u+l.x*2],right[417u+l.x*2]);
+        sum += left[l.y*16+14u]*vec2<f32>(right[448u+l.x*2],right[449u+l.x*2]);
+        sum += left[l.y*16+15u]*vec2<f32>(right[480u+l.x*2],right[481u+l.x*2]);
         workgroupBarrier();
     }
-    if channel<out && pixel<n {
-        if p[9]!=0u { sum += weights[p[8]+channel]; }
-        dst[channel*n+pixel] = sum;
+    if channel<out {
+        if p[9]!=0u { sum+=vec2<f32>(weights[p[8]+channel]); }
+        if pixel<n { dst[channel*n+pixel]=sum.x; }
+        if pixel+1<n { dst[channel*n+pixel+1]=sum.y; }
     }
+}
+
+// Stride-two 2x2 downsampling is an implicit matrix product. Gather input
+// coordinates directly, avoiding an im2col allocation or another dispatch.
+fn matrix_input(ch:u32, pixel:u32, n:u32) -> f32 {
+    if p[4]==2u {
+        let ow=p[2]/2u; let y=pixel/ow*2u+(ch%4u)/2u; let x=pixel%ow*2u+ch%2u;
+        return a[(ch/4u)*p[1]*p[2]+y*p[2]+x];
+    }
+    return a[ch*n+pixel];
 }
 
 @compute @workgroup_size(64)
@@ -70,6 +102,35 @@ fn norm(@builtin(global_invocation_id) id: vec3<u32>) {
     for (var ch=0u; ch<c; ch++) {
         dst[ch*n+pixel]=(a[ch*n+pixel]-mean)/scale*weights[ch]+weights[c+ch];
     }
+}
+
+// Deep layers have few pixels and many channels. Each workgroup reduces
+// 32 channel lanes for eight adjacent pixels, keeping source loads contiguous.
+@compute @workgroup_size(8,32)
+fn norm_channels(@builtin(local_invocation_id) l: vec3<u32>, @builtin(workgroup_id) g: vec3<u32>) {
+    let n=p[1]*p[2]; let pixel=g.x*8+l.x; let c=p[0];
+    let lane=l.y*8+l.x;
+    var sum=0.0;
+    if pixel<n { for (var ch=l.y; ch<c; ch+=32u) { sum+=a[ch*n+pixel]; } }
+    reduction[lane]=sum; workgroupBarrier();
+    for (var stride=16u; stride>0u; stride/=2u) {
+        if l.y<stride { reduction[lane]+=reduction[lane+stride*8]; }
+        workgroupBarrier();
+    }
+    let mean=reduction[l.x]/f32(c);
+    // All lanes read the mean before shared storage is reused for variance.
+    workgroupBarrier();
+    var variance=0.0;
+    if pixel<n { for (var ch=l.y; ch<c; ch+=32u) { let d=a[ch*n+pixel]-mean; variance+=d*d; } }
+    reduction[lane]=variance; workgroupBarrier();
+    for (var stride=16u; stride>0u; stride/=2u) {
+        if l.y<stride { reduction[lane]+=reduction[lane+stride*8]; }
+        workgroupBarrier();
+    }
+    let scale=sqrt(reduction[l.x]/f32(c)+1e-6);
+    if pixel<n { for (var ch=l.y; ch<c; ch+=32u) {
+        dst[ch*n+pixel]=(a[ch*n+pixel]-mean)/scale*weights[ch]+weights[c+ch];
+    } }
 }
 
 // AdaptiveAvgPool2d(1), over the whole tile, never a local/sliding pooling approximation.

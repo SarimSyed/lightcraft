@@ -24,6 +24,11 @@ struct Arena {
     buffers: Vec<Arc<wgpu::Buffer>>,
     bytes: u64,
 }
+#[derive(PartialEq, Eq, Hash)]
+struct BindingKey {
+    params: [u32; 12],
+    buffers: [wgpu::Buffer; 4],
+}
 pub(crate) struct Network {
     pub name: String,
     unavailable: fn() -> Option<String>,
@@ -35,6 +40,7 @@ pub(crate) struct Network {
     dummy: wgpu::Buffer,
     unwritten: wgpu::Buffer,
     arena: Mutex<Arena>,
+    bindings: Mutex<HashMap<BindingKey, wgpu::BindGroup>>,
 }
 
 // Scopes are per-thread in wgpu. Always pop them, including after a caught panic.
@@ -92,7 +98,7 @@ impl Network {
                 label: Some("NAFNet"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("nafnet.wgsl").into()),
             });
-            let kernels = ["pointwise", "spatial", "depthwise", "norm", "pool", "map"]
+            let kernels = ["pointwise", "spatial", "depthwise", "norm", "norm_channels", "pool", "map"]
                 .into_iter()
                 .map(|name| {
                     (
@@ -146,6 +152,7 @@ impl Network {
                     usage: wgpu::BufferUsages::COPY_SRC,
                 }),
                 arena: Mutex::new(Arena { buffers: Vec::new(), bytes: 0 }),
+                bindings: Mutex::new(HashMap::new()),
             })
         })
     }
@@ -155,6 +162,7 @@ impl Network {
             + self.unwritten.size()
             + self.dummy.size()
             + self.arena.lock().unwrap_or_else(|e| e.into_inner()).bytes
+            + self.bindings.lock().unwrap_or_else(|e| e.into_inner()).len() as u64 * 48
     }
     pub fn forward(&self, input: &Rgb32f) -> Result<Vec<f32>> {
         if let Some(reason) = (self.unavailable)() {
@@ -280,15 +288,35 @@ impl Network {
         out: &Image,
         groups: [u32; 3],
     ) -> Result<()> {
-        let params = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("NAFNet params"),
-            contents: bytemuck::cast_slice(&p),
-            usage: wgpu::BufferUsages::STORAGE,
-        });
-        let buffers = [&params, &a.buffer, b.map_or(&self.dummy, |b| &b.buffer), weight.map_or(&self.dummy, |w| &w.buffer), &out.buffer];
-        let entries: Vec<_> =
-            buffers.iter().enumerate().map(|(i, b)| wgpu::BindGroupEntry { binding: i as u32, resource: b.as_entire_binding() }).collect();
-        let group = self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("NAFNet"), layout: &self.layout, entries: &entries });
+        let key = BindingKey {
+            params: p,
+            buffers: [
+                (*a.buffer).clone(),
+                b.map_or(&self.dummy, |b| &b.buffer).clone(),
+                weight.map_or(&self.dummy, |w| &w.buffer).clone(),
+                (*out.buffer).clone(),
+            ],
+        };
+        let mut bindings = self.bindings.lock().unwrap_or_else(|e| e.into_inner());
+        // Fixed tiles reuse the same bindings. Bound the cache for edge-tile shapes.
+        if bindings.len() >= 2048 {
+            bindings.clear();
+        }
+        let group = bindings
+            .entry(key)
+            .or_insert_with_key(|key| {
+                let params = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("NAFNet params"),
+                    contents: bytemuck::cast_slice(&key.params),
+                    usage: wgpu::BufferUsages::STORAGE,
+                });
+                let buffers = [&params, &key.buffers[0], &key.buffers[1], &key.buffers[2], &key.buffers[3]];
+                let entries: Vec<_> =
+                    buffers.iter().enumerate().map(|(i, b)| wgpu::BindGroupEntry { binding: i as u32, resource: b.as_entire_binding() }).collect();
+                self.device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("NAFNet"), layout: &self.layout, entries: &entries })
+            })
+            .clone();
+        drop(bindings);
         let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some(kernel), timestamp_writes: None });
         pass.set_pipeline(self.kernels.get(kernel).ok_or("missing NAFNet kernel")?);
         pass.set_bind_group(0, &group, &[]);
@@ -313,8 +341,8 @@ impl Network {
         let out = self.image(arena, c, (x.h + 2 * pad - k) / stride + 1, (x.w + 2 * pad - k) / stride + 1)?;
         let weight = self.weight(&format!("{name}.weight"))?;
         let p = [x.c as u32, x.h as u32, x.w as u32, c as u32, k as u32, stride as u32, pad as u32, 0, weight.len, u32::from(weight.bias), 0, 0];
-        let (kernel, groups) = if k == 1 {
-            ("pointwise", [(out.h * out.w).div_ceil(16) as u32, c.div_ceil(16) as u32, 1])
+        let (kernel, groups) = if k == 1 || k == 2 {
+            ("pointwise", [(out.h * out.w).div_ceil(32) as u32, c.div_ceil(16) as u32, 1])
         } else {
             ("spatial", groups(c * out.h * out.w))
         };
@@ -342,13 +370,13 @@ impl Network {
         let out = self.image(arena, x.c, x.h, x.w)?;
         self.dispatch(
             encoder,
-            "norm",
+            if x.c >= 128 { "norm_channels" } else { "norm" },
             [x.c as u32, x.h as u32, x.w as u32, 0, 0, 0, 0, 0, 0, 0, 0, 0],
             x,
             None,
             Some(self.weight(&format!("{name}.weight"))?),
             &out,
-            groups(x.h * x.w),
+            if x.c >= 128 { [(x.h * x.w).div_ceil(8) as u32, 1, 1] } else { groups(x.h * x.w) },
         )?;
         Ok(out)
     }

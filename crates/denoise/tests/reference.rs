@@ -171,3 +171,29 @@ fn vulkan_model(dir: &std::path::Path) -> NafNet {
     })
     .unwrap()
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires an explicit GPU tile latency budget and real checkpoint"]
+fn vulkan_tile_inference_meets_explicit_latency_budget() {
+    let dir = std::path::PathBuf::from(std::env::var("LIGHTCRAFT_NAFNET_REFERENCE").expect("required model absent"));
+    let budget: f64 = std::env::var("LIGHTCRAFT_NAFNET_GPU_TILE_BUDGET_MS").expect("explicit GPU budget required").parse().unwrap();
+    assert!(budget.is_finite() && budget > 0.0);
+    let model = vulkan_model(&dir);
+    let image =
+        SrgbRgb::new(Rgb32f { width: 256, height: 256, data: (0..256 * 256).map(|i| [0.3 + (i % 23) as f32 * 0.004, 0.5, 0.7]).collect() }).unwrap();
+    // Warm driver compilation and the reusable activation/binding cache separately.
+    for _ in 0..2 {
+        model.infer_patch(&image, &Cancellation::default()).unwrap();
+    }
+    let mut timings = Vec::new();
+    for _ in 0..5 {
+        let start = std::time::Instant::now();
+        let result = model.infer_patch(&image, &Cancellation::default()).unwrap();
+        assert!(result.data.iter().flatten().all(|v| v.is_finite()));
+        assert!(model.backend().contains("Vulkan"), "CPU fallback cannot pass the GPU gate");
+        timings.push(start.elapsed().as_secs_f64() * 1000.0);
+    }
+    println!("GPU 256px tile milliseconds: {timings:?}");
+    assert!(timings.iter().all(|ms| *ms <= budget), "GPU tile exceeds {budget} ms budget: {timings:?}");
+}

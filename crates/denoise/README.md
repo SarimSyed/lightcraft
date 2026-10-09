@@ -4,13 +4,17 @@ UI-independent RGB-stage restoration. `Denoiser` accepts only validated float,
 sRGB-encoded RGB via `SrgbRgb`; sensor-domain models need a separate typed contract.
 The sole implementation is the authors' NAFNet SIDD width-32 network with ordinary
 global pooling. Native CPU inference uses Candle 0.9.2; macOS can use Metal and
-retry on CPU. The browser cannot run inference.
+retry on CPU. Linux uses the engine-supplied wgpu Vulkan device with reported
+CPU fallback. The browser cannot run inference.
 
 The CPU network uses fused, bounded F32 channel normalization and direct depthwise
 3×3 stencils, plus zero-copy matrix products for its 1×1 convolutions. These avoid
 Candle's per-channel convolution launches and intermediate normalization tensors.
 The architecture, weights, global pooling and tiling remain unchanged. No additional
-native library or GPU driver is needed on Linux.
+native library is added. Vulkan uses the installed system driver. Its F32 matrix
+kernels reuse weights across output pixels and gather stride-two convolutions
+without im2col buffers. Deep normalization reduces channels in parallel with
+contiguous pixel loads; a bounded binding cache reuses immutable GPU parameters.
 
 `model_input` / `restore_working` implement the versioned Rec.2020 correction
 adapter. `infer` uses full-source-anchored 256-pixel tiles, 64-pixel overlap and
