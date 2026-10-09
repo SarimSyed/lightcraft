@@ -245,3 +245,15 @@ the device on their first GPU render. `lightcraft_gpu::ready()` asks without blo
 - Large-radius blurs at full size (dehaze dark channel at 24 MP) dominate the export: a summed-area
   table or a downsampled dark channel would cut them further.
 - GPU histogram (atomics) to skip the CPU pass over the readback.
+
+
+## Linux AI denoise
+
+The engine supplies its guarded `compute_device()` to
+`lightcraft-denoise::NafNet::load_vulkan`; both L3 crates remain independent.
+NAFNet runs with its own bounded F32 WGSL kernels. The same GPU preference,
+backend overrides, crash sentinel and device-loss state apply. Denoise keeps its
+model and activations resident for one operation, uses its own scoped errors and
+readback validation, and reports its own backend/fallback and buffer allocation
+count through `enhance.denoise.status` (these buffers are outside render-stage
+`GpuMemory`). See [denoise validation and timings](denoise.md#linux-vulkan-inference-2026-10-09).

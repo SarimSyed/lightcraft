@@ -167,8 +167,12 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
             if let Some(error) = &status.error {
                 ui.label(RichText::new(error).color(Color32::from_rgb(230, 90, 80)));
             }
+            if !status.backend.is_empty() {
+                ui.label(RichText::new(format!("{}: {}", tr("Processing device"), status.backend)).color(t.text_dim));
+            }
             if status.cpu_fallback {
-                ui.label(tr("Metal was unavailable. Processing completed on CPU."));
+                ui.label(tr("GPU was unavailable. Processing completed on CPU."))
+                    .on_hover_text(status.fallback_reason.as_deref().unwrap_or_default());
             }
             ui.horizontal(|ui| {
                 let r = ui.button(tr("Cancel"));

@@ -37,6 +37,17 @@ mod render;
 #[cfg(not(target_arch = "wasm32"))]
 pub use render::GpuStages;
 
+/// Share the guarded native compute device with other L3 compute clients.
+/// Respects the rendering preference, backend overrides and device-loss state.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn compute_device() -> Result<(wgpu::Device, wgpu::Queue, wgpu::AdapterInfo), String> {
+    if !enabled() {
+        return Err(unavailable_reason().unwrap_or_else(|| "GPU disabled".into()));
+    }
+    let gpu = device().ok_or_else(|| unavailable_reason().unwrap_or_else(|| "GPU unavailable".into()))?;
+    Ok((gpu.device.clone(), gpu.queue.clone(), gpu.info.clone()))
+}
+
 static ENABLED: AtomicBool = AtomicBool::new(true);
 /// Set when a GPU render failed: the process stays on the CPU from then on.
 static BROKEN: AtomicBool = AtomicBool::new(false);

@@ -249,7 +249,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EDIT-DETAIL-SHARPEN | Sharpening | P0 | ✅ | `ctl:detail.sharpenAmount`, `ctl:detail.sharpenRadius`, `ctl:detail.sharpenDetail`, `ctl:detail.sharpenMasking` | no Alt-drag mask preview |
 | LR-EDIT-DETAIL-NR | Luminance noise reduction | P0 | ✅ | `ctl:detail.nrLuminance`, `ctl:detail.nrDetail`, `ctl:detail.nrContrast` | Contrast preserves local structure; public-render noise/brightness and cache regressions cover the controls. Dependent sliders are inert at NR 0; localized help and drag/reset undo are verified. Lightroom fidelity remains unmeasured |
 | LR-EDIT-DETAIL-CNR | Colour noise reduction | P0 | ✅ | `ctl:detail.nrColor`, `ctl:detail.nrColorDetail`, `ctl:detail.nrColorSmoothness` | Independent guided chromaticity filters preserve colour boundaries and luminance; procedural quality and CPU/GPU regressions. Dependent sliders preserve their values at NR 0; localized help. See `docs/noise-reduction.md`; Lightroom fidelity remains unmeasured |
-| LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | 🟡 | `cmd:enhance.denoise.apply`, `ctl:enhance.denoise`, `crates/denoise/src/lib.rs`, `docs/denoise.md` | NAFNet SIDD width-32, native RGB/demosaiced RAW; optimized pure-Rust CPU kernels, non-destructive float cache and one-step undo. Offline installation works; public release/redistribution permission and photographic RAW validation remain gates. Linux GPU inference and sensor-level RAW parity remain open |
+| LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | 🟡 | `cmd:enhance.denoise.apply`, `ctl:enhance.denoise`, `crates/denoise/src/lib.rs`, `docs/denoise.md` | NAFNet SIDD width-32, native RGB/demosaiced RAW; optimized pure-Rust CPU and Linux Vulkan inference (RX 9060 XT verified), non-destructive float cache and one-step undo. Offline installation works; public release/redistribution permission and photographic RAW validation remain gates. Other GPU hardware coverage and sensor-level RAW parity remain open |
 | LR-EDIT-DETAIL-RAWDETAILS | Improved demosaic toggle | P2 | ⬜ | | |
 | LR-EDIT-DETAIL-SUPERRES | Super resolution | P2 | ⬜ | | |
 | LR-EDIT-DETAIL-AISHARPEN | AI sharpen | OOS | 🚫 | | |
@@ -396,7 +396,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-ENH-DIALOG | Enhance dialog | P2 | 🟡 | `cmd:dialog.denoise`, `crates/ui-egui/src/panels/denoise.rs` | 100% crop, hold Before/Space, Amount, asynchronous Apply/Cancel; model download release-blocked, other Enhance models deferred |
+| LR-ENH-DIALOG | Enhance dialog | P2 | 🟡 | `cmd:dialog.denoise`, `crates/ui-egui/src/panels/denoise.rs` | 100% crop, hold Before/Space, Amount, asynchronous Apply/Cancel, processing device and CPU fallback reason; model download release-blocked, other Enhance models deferred |
 | LR-ENH-INPLACE | In-place enhance | P2 | 🟡 | `cmd:enhance.denoise.apply`, `crates/engine/src/enhance.rs` | one-photo denoise saves an adjustment and reusable full-resolution correction; original untouched; other enhancement modes deferred |
 
 ## Q. HDR (HDR)

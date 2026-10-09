@@ -48,6 +48,13 @@ fn apply_is_one_undoable_edit_and_cached_amounts_render_without_weights() {
     let baseline = s.render_job(id, 32, 24, false, true).unwrap().run().rendered.unwrap().image;
     s.execute("enhance.denoise.preview", &json!({"wait":true})).unwrap();
     assert_eq!(s.develop_of(id).unwrap(), before);
+    let status = s.execute("enhance.denoise.status", &json!({})).unwrap();
+    assert!(status["backend"].as_str().is_some_and(|name| !name.is_empty()));
+    assert_eq!(status["cpu_fallback"].as_bool(), Some(status["fallback_reason"].is_string()));
+    if std::env::var_os("LIGHTCRAFT_REQUIRE_DENOISE_GPU").is_some() {
+        assert!(status["backend"].as_str().is_some_and(|name| name.contains("Vulkan")), "{status}");
+        assert_eq!(status["cpu_fallback"], false);
+    }
     s.execute("enhance.denoise.apply", &json!({"wait":true,"amount":50})).unwrap();
     assert!(s.develop_of(id).unwrap().enhance.model.is_some());
     assert_eq!(std::fs::read(&path).unwrap(), encoded);

@@ -56,6 +56,12 @@ fn denoise_amount_preview_and_before_leave_history_untouched_until_apply() {
     let timeout = Duration::from_secs(30);
     assert_eq!(h.request("engine.execute", json!({"command":"dialog.denoise"}), timeout)["ok"], true);
     h.step_until(timeout, |h| h.app.session.enhancer.preview.is_some());
+    let status = h.request("engine.execute", json!({"command":"enhance.denoise.status"}), timeout);
+    assert!(status["result"]["backend"].as_str().is_some_and(|name| !name.is_empty()));
+    if std::env::var_os("LIGHTCRAFT_REQUIRE_DENOISE_GPU").is_some() {
+        assert!(status["result"]["backend"].as_str().is_some_and(|name| name.contains("Vulkan")), "{status}");
+        assert_eq!(status["result"]["cpu_fallback"], false);
+    }
     let capture = h.app.headless_screenshot(&h.view.ctx, true).unwrap();
     let preview_widget = h.request("ui.widgets", json!({"filter":"denoise:preview"}), timeout);
     let rect = preview_widget["result"][0]["rect"].as_array().unwrap();

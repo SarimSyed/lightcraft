@@ -117,19 +117,23 @@ impl SourceResolver {
         // A corrupt/missing artifact can be regenerated, but never silently bypassed.
         let cached = self.cached(&key, &source.image, model).ok().flatten();
         let was_cached = cached.is_some();
-        let (image, r, fallback) = if let Some(cached) = cached {
+        let (image, r, fallback, backend, fallback_reason, gpu_buffer_bytes) = if let Some(cached) = cached {
             let r = region.unwrap_or(Region { x: 0, y: 0, width: cached.width, height: cached.height });
-            (if region.is_none() { cached } else { Arc::new(crop(&cached, r)?) }, r, false)
+            (if region.is_none() { cached } else { Arc::new(crop(&cached, r)?) }, r, false, "cache".into(), None, 0)
         } else {
-            let network = lightcraft_denoise::NafNet::load_accelerated(&self.model_dir.join(MODEL_FILE))
-                .map_err(|e| format!("{e}; install or restore the verified model to regenerate this photo's result"))?;
+            let path = self.model_dir.join(MODEL_FILE);
+            #[cfg(target_os = "linux")]
+            let network = lightcraft_denoise::NafNet::load_vulkan(&path, lightcraft_gpu::compute_device(), lightcraft_gpu::unavailable_reason);
+            #[cfg(not(target_os = "linux"))]
+            let network = lightcraft_denoise::NafNet::load_accelerated(&path);
+            let network = network.map_err(|e| format!("{e}; install or restore the verified model to regenerate this photo's result"))?;
             if network.checkpoint_digest != model.checkpoint {
                 return Err("Checkpoint checksum mismatch; reinstall NAFNet SIDD width-32".into());
             }
             let input = lightcraft_denoise::model_input(&source.image).map_err(|e| e.to_string())?;
             let prediction = network.infer(&input, region, cancel, progress).map_err(|e| e.to_string())?;
             let image = lightcraft_denoise::restore_working(&source.image, &prediction.image, Some(prediction.region)).map_err(|e| e.to_string())?;
-            (Arc::new(image), prediction.region, prediction.cpu_fallback)
+            (Arc::new(image), prediction.region, prediction.cpu_fallback, prediction.backend, prediction.fallback_reason, prediction.gpu_buffer_bytes)
         };
         cancel.check().map_err(|e| e.to_string())?;
         if stamp(&self.origin) != initial || self.key(&source.image, model)? != key {
@@ -139,7 +143,7 @@ impl SourceResolver {
             self.save(&key, model, &image)?;
         }
         cancel.check().map_err(|e| e.to_string())?;
-        Ok(Completed { original: source, enhanced: image, region: r, fallback })
+        Ok(Completed { original: source, enhanced: image, region: r, fallback, backend, fallback_reason, gpu_buffer_bytes })
     }
     #[cfg(target_arch = "wasm32")]
     fn process(
@@ -180,6 +184,9 @@ struct Completed {
     enhanced: Arc<Rgb32f>,
     region: Region,
     fallback: bool,
+    backend: String,
+    gpu_buffer_bytes: u64,
+    fallback_reason: Option<String>,
 }
 #[derive(Clone, Default, Serialize)]
 pub struct Status {
@@ -188,6 +195,9 @@ pub struct Status {
     pub total: usize,
     pub error: Option<String>,
     pub cpu_fallback: bool,
+    pub backend: String,
+    pub gpu_buffer_bytes: u64,
+    pub fallback_reason: Option<String>,
     pub operation: u64,
     pub applying: bool,
 }
@@ -503,6 +513,9 @@ impl Session {
                 let mut status = self.enhancer.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 status.state = "success".into();
                 status.cpu_fallback = result.fallback;
+                status.backend = result.backend;
+                status.gpu_buffer_bytes = result.gpu_buffer_bytes;
+                status.fallback_reason = result.fallback_reason;
                 Ok(())
             }
             Err(error) => {

@@ -47,7 +47,7 @@ safetensors; none is a product dependency.
 | Size | 116,701,252 bytes (116.7 MB) |
 | Network | width 32; encoder 2/2/4/8; middle 12; decoder 2/2/2/2 |
 | Pooling | ordinary adaptive global average pooling, not NAFNetLocal/TLC |
-| Runtime | Candle 0.9.2, F32, CPU; optional macOS Metal with CPU fallback |
+| Runtime | F32; Candle 0.9.2 CPU/macOS Metal; Linux wgpu Vulkan with CPU fallback |
 
 Fetch `NAFNet_arch.py` and `arch_util.py` at the revision above, then:
 
@@ -74,7 +74,7 @@ CLI/MCP callers wait by default, or explicitly use `wait: true/false`.
 |---|---|
 | `enhance.denoise.preview` | `photo?`, `amount?` (50), `region?: {x,y,width,height}` in EXIF-oriented source pixels, `wait?`; no edit |
 | `enhance.denoise.apply` | `photo?`, `amount?` (50), `wait?`; full-resolution result, one undo step |
-| `enhance.denoise.status` | completion/progress/error/CPU fallback |
+| `enhance.denoise.status` | completion/progress/error/backend/CPU fallback and reason |
 | `enhance.denoise.cancel` | cancel current inference |
 | `enhance.model.status` | folder, exact size/digest, licence and installation/download state |
 | `enhance.model.download` | explicit download; requires the release gate above |
@@ -123,7 +123,7 @@ normalization and direct 3×3 depthwise stencils. Its 1×1 convolutions reshape 
 activation into Candle matrix products without an extra input copy. This replaces
 per-channel convolution launches and intermediate normalization tensors, while
 retaining the same F32 weights, epsilon, global pooling, padding and tile order.
-Metal retains the existing tensor path. Linux GPU inference remains unimplemented.
+Metal retains the existing tensor path. Linux uses the Vulkan path below when the existing GPU preference is enabled.
 
 The denoiser crate is optimized at level 3 in development builds as well as release
 builds, so the fused loops receive compiler vectorization during native editing.
@@ -228,7 +228,7 @@ one 8-bit level (57 changed channel samples at Amount 50, 42 at Amount 100).
 Amount zero and Before are pixel-identical. The photographic crop remains finite,
 including its 5,405 original out-of-range channel samples. This preserves the
 existing result's quality; it does not close the broader photographic validation
-or Linux GPU-inference gaps. Large 24 MP photos still require hundreds of tiles.
+gaps. Large 24 MP photos still require hundreds of tiles.
 
 Real-checkpoint engine tests and headless UI tests pass, covering safe Apply,
 undo/cache reuse, stale results, cancellation and Before. An English/Japanese
@@ -246,3 +246,78 @@ cargo run -p lightcraft-engine --example denoise_validate -- \
 The example uses public engine commands, saves Before/Amount previews and reports
 elapsed time and retained cache memory. Use `/usr/bin/time -v` on the built
 example binary for process peak RSS; timing `cargo` also counts compilation.
+
+
+### Linux Vulkan inference (2026-10-09)
+
+Native Linux AI denoise now shares the existing `lightcraft-gpu` compute device,
+supplied by the engine to the independent denoiser crate.
+The GPU preference and `LIGHTCRAFT_GPU=0` / `LIGHTCRAFT_GPU_BACKEND=off` apply to
+inference too. No new runtime or GPU driver dependency is added: wgpu/WGSL uses
+the system Vulkan driver. Software adapters are rejected. Windows remains on
+CPU; macOS retains Candle Metal. Browser inference remains deferred.
+
+All convolutions, channel normalization, SimpleGate, global pooling, attention,
+residual scales and pixel shuffle run in F32 on the GPU. Weights upload once per
+operation; activation buffers are reused and remain resident between layers.
+Only input/final tiles cross the CPU/GPU boundary. Allocation/workgroup limits,
+error scopes, a bounded readback wait and an unwritten-output sentinel prevent
+invalid GPU results from being accepted. A recoverable GPU failure retries on
+CPU and reports the reason. Cancellation is checked between tiles. The model,
+processing revision and cached corrections remain compatible.
+
+The dialog displays the processing device after preview. The shared
+`enhance.denoise.status` command reports `backend`, `cpu_fallback`,
+`fallback_reason` and `gpu_buffer_bytes` (Linux accounting, zero where unreported); `backend: "cache"` means an existing
+result was reused. GPU buffer bytes count the completed operation's model/activation/sentinel allocations (released after inference), excluding
+driver and command bookkeeping, and are zero for a cached result.
+
+On this machine's Radeon RX 9060 XT / RADV Vulkan, the independent PyTorch
+reference maximum errors were 4.47e-8 (1×1), 1.79e-7 (padding) and 2.38e-7
+(overlapping tiles), below the required 1e-4. Crop/full pixels matched exactly;
+between-tile cancellation and reported CPU retry after GPU disable passed.
+Hardware tests explicitly require Vulkan, so CPU fallback cannot pass them:
+
+```sh
+LIGHTCRAFT_GPU_BACKEND=vulkan LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
+  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+    gpu_ -- --ignored --nocapture --test-threads=1
+LIGHTCRAFT_REQUIRE_DENOISE_GPU=1 LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
+  cargo test -p lightcraft-engine --features reference-validation --test denoise
+LIGHTCRAFT_REQUIRE_DENOISE_GPU=1 LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
+  cargo test -p lightcraft-ui-egui --features reference-validation tests_denoise --lib
+```
+
+These hardware gates are opt-in, not silently skipped required tests; ordinary
+CI remains network-independent and the required real-checkpoint CPU job remains
+unchanged. Missing weights or GPU fail an explicitly requested hardware gate.
+
+| Local native development-build observation | CPU | Vulkan |
+|---|---:|---:|
+| Canon 8 MP ISO 800, 512×320 crop including decode | 4.50 s | 1.22 s |
+| Same Canon, full Apply (221 tiles) | 75.19 s | 12.59 s |
+| Same Canon, peak process RSS for validation workflow | 731,092 KiB | 843,656 KiB |
+| Same Canon, cached Amount 50 / 100 / 50 at 1024px | 40.1 / 38.6 / 39.2 ms | 33.4 / 32.8 / 32.8 ms |
+| Private Nikon D7100 ISO 6400 NEF, 4020×6036 full Apply | not timed | 40.33 s |
+
+A repeat after adding buffer accounting took 12.76 s for full Apply, with
+219,403,152 bytes of model/reusable activation/sentinel GPU buffers.
+The Canon full operation is approximately 6× faster than the optimized CPU path.
+The Nikon run overlapped an application build; its timing is an observation,
+not an isolated benchmark or general guarantee. Its crop remained finite, with
+mean linear correction 0.000279 and RMS correction 0.012799. Visual inspection
+showed reduced noise and retained bark texture at Amount 50; no paired clean
+reference or sensor-level parity is established. The native control channel
+confirmed asynchronous preparing/processing/success with Vulkan and no fallback.
+An English/Japanese screenshot review confirmed the device label fits the dialog.
+Public model redistribution/delivery and broader photographic validation remain
+release gates. GPU inference has been measured on this AMD device only.
+
+
+The standard rendering benchmark passed with the matching Nikon lossless-12
+fixture. A fresh build of the unchanged HEAD was also compared with the new
+build on that same fixture: no CPU-time metric regressed by more than 20%.
+Full 24 MP render CPU time was 8,188 versus 7,997 ms, with Vulkan/CPU export
+agreement of max 1 LSB and mean 0.0025 LSB. An initial comparison against an
+older run flagged CPU-time variation; the fresh matched baseline ruled out a
+regression from this change.

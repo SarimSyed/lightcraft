@@ -11,6 +11,8 @@ use std::sync::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 mod network;
+#[cfg(target_os = "linux")]
+mod vulkan;
 
 pub const MODEL_ID: &str = "nafnet-sidd-width32";
 pub const PROCESSING_REVISION: &str = "rec2020-correction-v1-tiles256-overlap64-global-pool";
@@ -86,6 +88,9 @@ pub struct Inference {
     pub image: Rgb32f,
     pub region: Region,
     pub cpu_fallback: bool,
+    pub backend: String,
+    pub gpu_buffer_bytes: u64,
+    pub fallback_reason: Option<String>,
 }
 pub trait Denoiser: Send + Sync {
     fn description(&self) -> ModelDescription;
@@ -163,6 +168,10 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct NafNet {
+    #[cfg(not(target_arch = "wasm32"))]
+    fallback_reason: std::sync::Mutex<Option<String>>,
+    #[cfg(target_os = "linux")]
+    vulkan: Option<vulkan::Network>,
     pub checkpoint_digest: String,
     #[cfg(not(target_arch = "wasm32"))]
     network: network::Network,
@@ -170,13 +179,28 @@ pub struct NafNet {
     device: candle_core::Device,
     #[cfg(target_os = "macos")]
     metal: Option<(network::Network, candle_core::Device)>,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     weights: std::collections::HashMap<String, candle_core::Tensor>,
     #[cfg(not(target_arch = "wasm32"))]
     fallback: AtomicBool,
 }
 
 impl NafNet {
+    /// The inference backend in use; after a recoverable GPU failure this reports CPU.
+    pub fn backend(&self) -> String {
+        #[cfg(not(target_arch = "wasm32"))]
+        if !self.fallback.load(Ordering::Relaxed) {
+            #[cfg(target_os = "linux")]
+            if let Some(gpu) = &self.vulkan {
+                return gpu.name.clone();
+            }
+            #[cfg(target_os = "macos")]
+            if self.metal.is_some() {
+                return "Metal".into();
+            }
+        }
+        "CPU".into()
+    }
     pub fn load_accelerated(path: &Path) -> Result<Self> {
         let model = Self::load(path)?;
         #[cfg(target_os = "macos")]
@@ -191,11 +215,32 @@ impl NafNet {
             })();
             match accelerated {
                 Ok(metal) => model.metal = Some(metal),
-                Err(_) => model.fallback.store(true, Ordering::Relaxed),
+                Err(error) => {
+                    *model.fallback_reason.lock().unwrap_or_else(|e| e.into_inner()) = Some(error.to_string());
+                    model.fallback.store(true, Ordering::Relaxed);
+                }
             }
             Ok(model)
         }
         #[cfg(not(target_os = "macos"))]
+        Ok(model)
+    }
+    /// Linux inference using a device supplied by the host. The availability
+    /// callback respects host preferences/device loss without depending on its renderer.
+    #[cfg(target_os = "linux")]
+    pub fn load_vulkan(
+        path: &Path,
+        device: std::result::Result<(wgpu::Device, wgpu::Queue, wgpu::AdapterInfo), String>,
+        unavailable: fn() -> Option<String>,
+    ) -> Result<Self> {
+        let mut model = Self::load(path)?;
+        match device.and_then(|device| vulkan::Network::new(&model.weights, device, unavailable)) {
+            Ok(gpu) => model.vulkan = Some(gpu),
+            Err(error) => {
+                *model.fallback_reason.lock().unwrap_or_else(|e| e.into_inner()) = Some(error);
+                model.fallback.store(true, Ordering::Relaxed);
+            }
+        }
         Ok(model)
     }
     pub fn load(path: &Path) -> Result<Self> {
@@ -263,13 +308,16 @@ impl NafNet {
             let network = network::Network::new(vb).map_err(|e| Error::Checkpoint(e.to_string()))?;
             Ok(Self {
                 checkpoint_digest,
+                fallback_reason: std::sync::Mutex::new(None),
                 network,
                 device,
                 fallback: AtomicBool::new(false),
                 #[cfg(target_os = "macos")]
                 metal: None,
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
                 weights: tensors,
+                #[cfg(target_os = "linux")]
+                vulkan: None,
             })
         }
         #[cfg(target_arch = "wasm32")]
@@ -297,7 +345,8 @@ impl NafNet {
         {
             match run(network, device) {
                 Ok(output) => Ok(output),
-                Err(_) => {
+                Err(error) => {
+                    *self.fallback_reason.lock().unwrap_or_else(|e| e.into_inner()) = Some(error.to_string());
                     self.fallback.store(true, Ordering::Relaxed);
                     run(&self.network, &self.device)
                 }
@@ -305,7 +354,22 @@ impl NafNet {
         } else {
             run(&self.network, &self.device)
         };
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        let result = if !self.fallback.load(Ordering::Relaxed)
+            && let Some(gpu) = &self.vulkan
+        {
+            match gpu.forward(image) {
+                Ok(output) => Ok(output),
+                Err(error) => {
+                    *self.fallback_reason.lock().unwrap_or_else(|e| e.into_inner()) = Some(error.to_string());
+                    self.fallback.store(true, Ordering::Relaxed);
+                    run(&self.network, &self.device)
+                }
+            }
+        } else {
+            run(&self.network, &self.device)
+        };
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         let result = run(&self.network, &self.device);
         let result = result.map_err(|e| Error::Inference(e.to_string()))?;
         cancel.check()?;
@@ -372,6 +436,22 @@ impl Denoiser for NafNet {
             }
         }
         validate(&image)?;
-        Ok(Inference { image, region: r, cpu_fallback: self.fallback.load(Ordering::Relaxed) })
+        Ok(Inference {
+            image,
+            region: r,
+            cpu_fallback: self.fallback.load(Ordering::Relaxed),
+            backend: self.backend(),
+            gpu_buffer_bytes: {
+                #[cfg(target_os = "linux")]
+                {
+                    self.vulkan.as_ref().map_or(0, vulkan::Network::buffer_bytes)
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    0
+                }
+            },
+            fallback_reason: self.fallback_reason.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+        })
     }
 }
