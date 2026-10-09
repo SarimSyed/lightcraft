@@ -1,7 +1,8 @@
 # What's new in LightCraft
 
-For changes introduced by **@SarimSyed's fork** over its inherited v0.4.0 baseline, see
-[What this fork changes](../README.md#what-this-fork-changes). The history below also includes upstream changes.
+This history includes changes inherited from upstream. Fork-specific behaviour and validation limits are
+documented in [AI denoise](denoise.md), [noise reduction](noise-reduction.md),
+[presets](presets.md) and [Nikon colour verification](camera-preview-colour.md).
 
 ## October 2026
 
