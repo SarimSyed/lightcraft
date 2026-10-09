@@ -240,3 +240,75 @@ fn stale_and_cancelled_workers_never_replace_conflicting_edits() {
     drop(s);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[cfg(feature = "reference-validation")]
+#[test]
+#[ignore = "requires physical GPU and an explicit local latency budget"]
+fn repeated_preview_meets_explicit_latency_budget_and_rejects_changed_weights() {
+    use lightcraft_engine::catalog::{Op, Photo, Source};
+    let budget: f64 = std::env::var("LIGHTCRAFT_NAFNET_PREVIEW_BUDGET_MS").expect("explicit preview budget required").parse().unwrap();
+    assert!(budget.is_finite() && budget > 0.0);
+    let dir = std::env::temp_dir().join(format!("lc-denoise-resident-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = std::path::PathBuf::from(std::env::var("LIGHTCRAFT_NAFNET_REFERENCE").expect("required model absent"));
+    let model_path = dir.join(lightcraft_engine::enhance::MODEL_FILE);
+    std::fs::copy(source.join(lightcraft_engine::enhance::MODEL_FILE), &model_path).unwrap();
+    let pixels = vec![0.25f32; 32 * 24 * 3];
+    let encoded = lightcraft_codecs::encode_tiff(
+        &lightcraft_codecs::EncodeImage::new(32, 24, 3, lightcraft_codecs::Samples::F32(&pixels)),
+        lightcraft_codecs::TiffCompression::Deflate,
+        &Default::default(),
+    )
+    .unwrap();
+    let path = dir.join("source.tif");
+    std::fs::write(&path, &encoded).unwrap();
+    let mut s = Session::new().with_fs();
+    s.enhancer.model_dir = dir.clone();
+    let id = s.catalog.alloc_photo_id();
+    s.commit(
+        "Import",
+        Op::AddPhoto {
+            photo: Box::new(Photo::new(id, Source::File { path: path.to_string_lossy().into() }, "source.tif", "TIFF", 32, 24, "2026-10-09")),
+        },
+    )
+    .unwrap();
+    s.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+    let before = s.develop_of(id).unwrap();
+    s.execute("enhance.denoise.preview", &json!({"wait":true,"region":{"x":0,"y":0,"width":32,"height":24}})).unwrap();
+    for _ in 0..3 {
+        let start = std::time::Instant::now();
+        s.execute("enhance.denoise.preview", &json!({"wait":true,"region":{"x":0,"y":0,"width":32,"height":24}})).unwrap();
+        let ms = start.elapsed().as_secs_f64() * 1000.0;
+        let status = s.execute("enhance.denoise.status", &json!({})).unwrap();
+        assert!(status["backend"].as_str().is_some_and(|n| n.contains("Vulkan")), "{status}");
+        assert_eq!(status["cpu_fallback"], false, "{status}");
+        eprintln!("repeated preview {ms:.2} ms; budget {budget:.2} ms");
+        assert!(ms <= budget, "repeated preview exceeded explicit budget");
+    }
+    assert_eq!(s.develop_of(id).unwrap(), before);
+    let memory = s.memory_report();
+    assert!(memory.enhancements.bytes >= 116_000_000, "resident weights must be accounted");
+    assert!(memory.gpu.allocated >= 116_000_000, "resident GPU weights must be accounted");
+    s.execute("app.gpu", &json!({"enabled":false})).unwrap();
+    s.execute("enhance.denoise.preview", &json!({"wait":true,"region":{"x":0,"y":0,"width":32,"height":24}})).unwrap();
+    let status = s.execute("enhance.denoise.status", &json!({})).unwrap();
+    assert_eq!(status["backend"], "CPU");
+    assert_eq!(status["cpu_fallback"], true);
+    assert!(status["fallback_reason"].is_string());
+    s.execute("app.gpu", &json!({"enabled":true})).unwrap();
+    s.execute("enhance.denoise.preview", &json!({"wait":true,"region":{"x":0,"y":0,"width":32,"height":24}})).unwrap();
+    let status = s.execute("enhance.denoise.status", &json!({})).unwrap();
+    assert!(status["backend"].as_str().is_some_and(|n| n.contains("Vulkan")), "{status}");
+    assert_eq!(status["cpu_fallback"], false);
+    std::fs::write(&model_path, b"corrupt replacement").unwrap();
+    assert!(
+        s.execute("enhance.denoise.preview", &json!({"wait":true,"region":{"x":0,"y":0,"width":32,"height":24}}))
+            .unwrap_err()
+            .to_string()
+            .contains("checkpoint")
+    );
+    assert_eq!(s.develop_of(id).unwrap(), before);
+    assert_eq!(std::fs::read(path).unwrap(), encoded);
+    drop(s);
+    std::fs::remove_dir_all(dir).unwrap();
+}

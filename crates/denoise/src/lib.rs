@@ -169,6 +169,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct NafNet {
     #[cfg(not(target_arch = "wasm32"))]
+    weight_bytes: usize,
+    #[cfg(not(target_arch = "wasm32"))]
     fallback_reason: std::sync::Mutex<Option<String>>,
     #[cfg(target_os = "linux")]
     vulkan: Option<vulkan::Network>,
@@ -186,6 +188,25 @@ pub struct NafNet {
 }
 
 impl NafNet {
+    /// Retained host weights/workspace and device buffers, excluding allocator/driver overhead.
+    /// Reading this does not wait for active inference.
+    pub fn resident_bytes(&self) -> (usize, u64) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            #[cfg(target_os = "linux")]
+            if let Some(gpu) = &self.vulkan {
+                return (self.weight_bytes.saturating_add(gpu.host_bytes()), gpu.buffer_bytes());
+            }
+            #[cfg(target_os = "macos")]
+            if self.metal.is_some() {
+                return (self.weight_bytes, self.weight_bytes as u64);
+            }
+            (self.weight_bytes, 0)
+        }
+        #[cfg(target_arch = "wasm32")]
+        (0, 0)
+    }
+
     /// The inference backend in use; after a recoverable GPU failure this reports CPU.
     pub fn backend(&self) -> String {
         #[cfg(not(target_arch = "wasm32"))]
@@ -307,6 +328,7 @@ impl NafNet {
             let vb = candle_nn::VarBuilder::from_tensors(tensors.clone(), candle_core::DType::F32, &device);
             let network = network::Network::new(vb).map_err(|e| Error::Checkpoint(e.to_string()))?;
             Ok(Self {
+                weight_bytes: tensors.values().map(|t| t.elem_count().saturating_mul(4)).sum(),
                 checkpoint_digest,
                 fallback_reason: std::sync::Mutex::new(None),
                 network,
@@ -334,8 +356,8 @@ impl NafNet {
         if image.width > TILE || image.height > TILE {
             return Err(Error::Input("patch exceeds 256 pixels".into()));
         }
-        let data: Vec<f32> = image.data.iter().flatten().copied().collect();
         let run = |network: &network::Network, device: &candle_core::Device| -> candle_core::Result<_> {
+            let data: Vec<f32> = image.data.iter().flatten().copied().collect();
             let tensor = candle_core::Tensor::from_slice(&data, (1, image.height, image.width, 3), device)?.permute((0, 3, 1, 2))?.contiguous()?;
             network.forward(&tensor)?.permute((0, 2, 3, 1))?.contiguous()?.flatten_all()?.to_vec1::<f32>()
         };
@@ -377,6 +399,68 @@ impl NafNet {
         validate(&output)?;
         Ok(output)
     }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn infer_tiles(
+        &self,
+        source: &Rgb32f,
+        tiles: &[(usize, usize)],
+        cancel: &Cancellation,
+        consume: &mut impl FnMut(usize, Rgb32f) -> Result<()>,
+    ) -> Result<()> {
+        let prepare = |index: usize| -> Result<SrgbRgb> {
+            cancel.check()?;
+            let (sx, sy) = *tiles.get(index).ok_or_else(|| Error::Inference("invalid tile index".into()))?;
+            let mut tile = Rgb32f::new(TILE, TILE);
+            for y in 0..TILE.min(source.height - sy) {
+                for x in 0..TILE.min(source.width - sx) {
+                    let from = source.data.get((sy + y) * source.width + sx + x).ok_or_else(|| Error::Input("invalid source tile extent".into()))?;
+                    let to = tile.data.get_mut(y * TILE + x).ok_or_else(|| Error::Input("invalid tile extent".into()))?;
+                    *to = *from;
+                }
+            }
+            Ok(SrgbRgb(tile))
+        };
+        #[cfg(target_os = "linux")]
+        if let Some(gpu) = &self.vulkan
+            && !self.fallback.load(Ordering::Relaxed)
+        {
+            for (batch, locations) in tiles.chunks(2).enumerate() {
+                let inputs = (0..locations.len()).map(|offset| prepare(batch * 2 + offset)).collect::<Result<Vec<_>>>()?;
+                let outputs = if !self.fallback.load(Ordering::Relaxed) {
+                    let result = gpu.forward_tiles(&inputs.iter().map(SrgbRgb::image).collect::<Vec<_>>());
+                    cancel.check()?;
+                    match result {
+                        Ok(raw) => Some(raw),
+                        Err(reason) => {
+                            *self.fallback_reason.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
+                            self.fallback.store(true, Ordering::Relaxed);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+                if let Some(outputs) = outputs {
+                    if outputs.len() != inputs.len() {
+                        return Err(Error::Inference("invalid tile result count".into()));
+                    }
+                    for (offset, (raw, input)) in outputs.into_iter().zip(&inputs).enumerate() {
+                        cancel.check()?;
+                        consume(batch * 2 + offset, Rgb32f { width: input.0.width, height: input.0.height, data: raw.as_chunks::<3>().0.to_vec() })?;
+                    }
+                } else {
+                    for (offset, input) in inputs.iter().enumerate() {
+                        consume(batch * 2 + offset, self.infer_patch(input, cancel)?)?;
+                    }
+                }
+            }
+            return Ok(());
+        }
+        for index in 0..tiles.len() {
+            consume(index, self.infer_patch(&prepare(index)?, cancel)?)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -401,17 +485,8 @@ impl Denoiser for NafNet {
         let mut image = Rgb32f::new(r.width, r.height);
         let mut sums = vec![0f32; r.width * r.height];
         let taper = |i: usize| ((i as f32 + 0.5) / OVERLAP as f32).min((TILE as f32 - 0.5 - i as f32) / OVERLAP as f32).min(1.0);
-        for (done, (sx, sy)) in tiles.iter().copied().enumerate() {
-            cancel.check()?;
-            let mut tile = Rgb32f::new(TILE, TILE);
-            for y in 0..TILE.min(source.height - sy) {
-                for x in 0..TILE.min(source.width - sx) {
-                    if let (Some(to), Some(from)) = (tile.data.get_mut(y * TILE + x), source.data.get((sy + y) * source.width + sx + x)) {
-                        *to = *from;
-                    }
-                }
-            }
-            let output = self.infer_patch(&SrgbRgb(tile), cancel)?;
+        self.infer_tiles(source, &tiles, cancel, &mut |done, output| {
+            let (sx, sy) = *tiles.get(done).ok_or_else(|| Error::Inference("invalid tile index".into()))?;
             for y in sy.max(r.y)..(sy + TILE).min(r.y + r.height) {
                 for x in sx.max(r.x)..(sx + TILE).min(r.x + r.width) {
                     let i = (y - r.y) * r.width + x - r.x;
@@ -426,7 +501,8 @@ impl Denoiser for NafNet {
                 }
             }
             progress(done + 1, tiles.len());
-        }
+            Ok(())
+        })?;
         for (pixel, sum) in image.data.iter_mut().zip(sums) {
             if sum <= 0.0 {
                 return Err(Error::Inference("uncovered pixel".into()));

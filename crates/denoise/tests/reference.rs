@@ -197,3 +197,28 @@ fn vulkan_tile_inference_meets_explicit_latency_budget() {
     println!("GPU 256px tile milliseconds: {timings:?}");
     assert!(timings.iter().all(|ms| *ms <= budget), "GPU tile exceeds {budget} ms budget: {timings:?}");
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires an explicit GPU image latency budget and real checkpoint"]
+fn vulkan_image_inference_meets_explicit_latency_budget() {
+    let dir = std::path::PathBuf::from(std::env::var("LIGHTCRAFT_NAFNET_REFERENCE").expect("required model absent"));
+    let budget: f64 = std::env::var("LIGHTCRAFT_NAFNET_GPU_IMAGE_BUDGET_MS").expect("explicit image budget required").parse().unwrap();
+    assert!(budget.is_finite() && budget > 0.0);
+    let model = vulkan_model(&dir);
+    let image =
+        SrgbRgb::new(Rgb32f { width: 768, height: 512, data: (0..768 * 512).map(|i| [0.3 + (i % 23) as f32 * 0.004, 0.5, 0.7]).collect() }).unwrap();
+    model.infer(&image, None, &Cancellation::default(), &|_, _| {}).unwrap();
+    let mut times = Vec::new();
+    for _ in 0..3 {
+        let progress = std::sync::Mutex::new(Vec::new());
+        let t = std::time::Instant::now();
+        let result = model.infer(&image, None, &Cancellation::default(), &|done, total| progress.lock().unwrap().push((done, total))).unwrap();
+        times.push(t.elapsed().as_secs_f64() * 1000.0);
+        assert!(result.backend.contains("Vulkan") && !result.cpu_fallback, "CPU fallback cannot pass the GPU gate: {:?}", result.fallback_reason);
+        assert!(result.image.data.iter().flatten().all(|v| v.is_finite()));
+        assert_eq!(*progress.lock().unwrap(), (1..=12).map(|n| (n, 12)).collect::<Vec<_>>());
+    }
+    println!("GPU 768x512 image milliseconds: {times:?}");
+    assert!(times.iter().all(|ms| *ms <= budget), "GPU image exceeds {budget} ms budget: {times:?}");
+}

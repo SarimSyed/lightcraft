@@ -6,8 +6,10 @@
 - Linux AI denoise now uses Vulkan when the GPU preference is enabled, with safe
   CPU fallback and a visible processing device. Verified on a Radeon RX 9060 XT:
   8 MP full processing fell from 75.2 to 12.6 seconds. Further matrix, normalization
-  and binding optimizations cut a matched 24 MP Nikon NEF run from 37.0 to 25.3 seconds,
-  preserving F32 precision and the same model/tiles.
+  and binding optimizations cut a matched 24 MP Nikon NEF run from 37.0 to 25.3 seconds.
+  Kernel fusion, paired tile submissions and model reuse then reduced a fresh
+  24.3-second run to 12.6 seconds, preserving F32 precision and the same model/tiles.
+  Repeated crop previews reuse uploaded weights; retained memory is reported.
 - Fused normalization and depthwise convolution plus fewer tensor copies accelerate
   NAFNet's CPU inference on Linux. The model, overlap and reusable result stay the same.
   See [measured validation and remaining limits](denoise.md).

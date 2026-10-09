@@ -15,12 +15,16 @@ native library is added. Vulkan uses the installed system driver. Its F32 matrix
 kernels reuse weights across output pixels and gather stride-two convolutions
 without im2col buffers. Deep normalization reduces channels in parallel with
 contiguous pixel loads; a bounded binding cache reuses immutable GPU parameters.
+Pointwise convolutions fuse attention/residual operations and SimpleGate; paired
+tile submissions reuse input staging and readback buffers. The engine retains one
+verified model/workspace between previews and Apply and accounts for its memory.
 
 `model_input` / `restore_working` implement the versioned Rec.2020 correction
 adapter. `infer` uses full-source-anchored 256-pixel tiles, 64-pixel overlap and
 normalized tapered blending. A region evaluates exactly the same contributing
 tiles and produces the same values as cropping a full inference. Cancellation
-is checked between tiles and before/after each network operation.
+is checked between consumed tiles and before/after each network operation. Linux
+may already have one additional tile queued when cancellation arrives.
 
 Normal API tests need no weights or network. Required reference validation:
 

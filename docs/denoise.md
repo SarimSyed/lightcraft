@@ -258,8 +258,10 @@ the system Vulkan driver. Software adapters are rejected. Windows remains on
 CPU; macOS retains Candle Metal. Browser inference remains deferred.
 
 All convolutions, channel normalization, SimpleGate, global pooling, attention,
-residual scales and pixel shuffle run in F32 on the GPU. Weights upload once per
-operation; activation buffers are reused and remain resident between layers.
+residual scales and pixel shuffle run in F32 on the GPU. One model and its bounded
+workspace stay resident per engine session, including between preview and Apply.
+Weight-file identity and GPU availability changes reload it. Activations are reused
+between layers and tiles.
 Only input/final tiles cross the CPU/GPU boundary. Allocation/workgroup limits,
 error scopes, a bounded readback wait and an unwritten-output sentinel prevent
 invalid GPU results from being accepted. A recoverable GPU failure retries on
@@ -269,8 +271,12 @@ processing revision and cached corrections remain compatible.
 The dialog displays the processing device after preview. The shared
 `enhance.denoise.status` command reports `backend`, `cpu_fallback`,
 `fallback_reason` and `gpu_buffer_bytes` (Linux accounting, zero where unreported); `backend: "cache"` means an existing
-result was reused. GPU buffer bytes count the completed operation's model/activation/sentinel allocations (released after inference), excluding
-driver and command bookkeeping, and are zero for a cached result.
+result was reused. GPU buffer bytes count model/activation/sentinel/parameter/readback
+buffers plus the bounded upload pool, excluding driver and command bookkeeping,
+and are zero for a cached result. `library.memory` and `ui.inspect` account for
+the resident model/workspace even after an operation finishes; CPU weights are
+in `enhancements`, device buffers in `gpu.allocated`. Inspection does not wait
+on the inference workspace lock.
 
 On this machine's Radeon RX 9060 XT / RADV Vulkan, the independent PyTorch
 reference maximum errors were 4.47e-8 (1×1), 1.79e-7 (padding) and 2.38e-7
@@ -384,3 +390,104 @@ preview/Apply state. The strict ordinary-render benchmark passed with the same
 Nikon lossless-12 corpus fixture: export CPU time was 8,145 versus 7,944 ms,
 GPU export 327 versus 326 ms, and CPU/GPU output agreement stayed at max 1 LSB
 and mean 0.0025 LSB.
+
+
+### Fused kernels, paired submissions and model reuse (2026-10-09)
+
+A fresh GPU timestamp profile of the previous optimized path put dense matrix
+products at roughly 70% of dispatch time. A four-value register tile now reuses
+operands across two channels and two pixels. Depthwise convolution feeds
+SimpleGate directly; attention multiplication, learned residual scales and
+residual addition are fused into their pointwise convolutions. This removes
+180 intermediate dispatches per tile and reduces reusable activation storage.
+F32 precision, normalization epsilon, global pooling, fixed tiles/overlap,
+zero padding and the processing revision remain unchanged.
+
+Linux queues at most two complete tile submissions before waiting for readback.
+Queue ordering safely reuses activation buffers; two independent readback slots
+and a staging belt reuse transfer storage. Progress and blending stay in source
+tile order. Cancellation is checked before preparation and between consumed
+tiles; one additional tile may already be queued. Failures retry the batch on
+CPU with a reported reason, and cancellation/failure cannot commit an edit.
+CPU and Metal keep serial tile processing.
+
+The engine retains one model across previews, Apply and photo changes; only
+weights/workspace are shared. Each photo still supplies its own source pixels
+and correction/cache key. Changed or missing weight files and GPU preference
+changes invalidate the model. Failed Linux GPU models can retry initialization on the
+next operation when the host permits acceleration. Loading and memory inspection
+use a short cache lock, with no GPU wait while that lock is held.
+
+Matched, isolated native development-build runs on the same Radeon RX 9060 XT
+and Nikon D7100 ISO 6400 NEF (4020×6036), using the public engine commands:
+
+| Operation / process measurement | Fresh previous baseline | Fused + paired + resident |
+|---|---:|---:|
+| Full Apply, including lossless result storage | 24.32 s | 12.58 s |
+| 512×320 crop including decode, cold model (12 tiles) | 2.35 s | 2.25 s |
+| Peak RSS for decode/preview/Apply/cached renders | 1,442,916 KiB | 1,442,364 KiB |
+| Cached Amount 50 / 100 / 50 at 1024px | 109.6 / 103.9 / 107.4 ms | 108.4 / 107.4 / 108.5 ms |
+| Retained enhancement CPU bytes | 586,285,440 | 703,710,732 |
+| Denoiser GPU buffers after preview | 219,443,616 | 203,782,000 |
+
+Full Apply improved by 48% (1.93×). Retaining the model costs 117,425,292 additional
+host bytes (weights plus the input workspace) and keeps approximately 204 MB of
+GPU buffers live. The upload pool allowance is bounded to two tile-sized chunks;
+allocator, bind-group and driver overhead are excluded. Peak process RSS was
+roughly unchanged, since full-image processing dominates the peak. These are
+local observations, not a universal hardware budget.
+
+Five warmed public 256px tile calls took **23.01–23.35 ms**, versus 31.75–33.50 ms
+before this change, passing an explicit 25 ms local gate. Paired submissions
+reduced a 768×512/12-tile test from 285.12–288.32 ms after fusion alone to
+267.51–271.08 ms, passing an explicit 275 ms gate. Repeated 32×24 engine crop
+previews fell from 127.45 ms with repeated loading to 23–26 ms with model reuse,
+passing a 100 ms gate. The engine test also checks memory accounting, no preview
+edit, GPU off/on recovery and corrupt replacement rejection. These opt-in tests
+require weights and a physical GPU and never accept a CPU fallback as a pass:
+
+```sh
+LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle LIGHTCRAFT_NAFNET_GPU_TILE_BUDGET_MS=25 \
+  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+    vulkan_tile_inference -- --ignored --nocapture --test-threads=1
+LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle LIGHTCRAFT_NAFNET_GPU_IMAGE_BUDGET_MS=275 \
+  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+    vulkan_image_inference -- --ignored --nocapture --test-threads=1
+LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle LIGHTCRAFT_NAFNET_PREVIEW_BUDGET_MS=100 \
+  cargo test -p lightcraft-engine --features reference-validation --test denoise \
+    repeated_preview -- --ignored --nocapture --test-threads=1
+```
+
+Independent PyTorch maximum errors remain 4.47e-8 (1×1), 1.19e-7 (padding) and
+2.38e-7 (overlapping tiles), below 1e-4. Crop/full pixels match exactly; cancellation
+and reported CPU fallback pass. Against the previous Vulkan photographic renders,
+Before and Amount zero are identical. Amount 50/100 at 1024px differ in only 15/18
+channel samples by at most one 8-bit level; the 100% crop changes one channel
+sample at Amount 100. Crop/full visual inspection found no new tile boundaries.
+Both private NEF checksums remain unchanged. Photographic quality, model delivery
+permission and broader GPU coverage remain the existing validation gates.
+
+
+All seven `cargo xtask ci` gates passed, together with required CPU references,
+explicit GPU references, engine behavior and headless UI tests. The rebuilt
+release app completed crop preview (12 tiles) and asynchronous Apply (221 tiles)
+on the CC0 Canon DNG with Vulkan and no CPU fallback. During Apply, 11 status
+round trips took 0.49–19.40 ms; the final native inspection reported a 0.39 ms
+frame and a 9.07 ms maximum update. One batched preview/hold-Space screenshot
+review and one Apply confirmation pass checked the native result and retained
+model accounting. Test app processes were terminated and reaped afterward.
+
+The initial three-sample strict ordinary-render check flagged four GPU host-time
+metrics (three 1.4→1.7 ms changes and one 2.9→4.1 ms change). The nine-sample
+strict gate passed, although a direct baseline comparison still flagged four
+different small host timings. Focused, matched 30-sample runs of the previous
+binary, rebuilt binary and unchanged-binary control found no CPU-time regressions
+above 20%. No renderer source or benchmark threshold changed. Highlights/clarity
+GPU host time was 1.1 ms in all three focused runs; full loupe NR was
+4.7→4.1→4.0 ms, with GPU wall time 24.0→23.8→23.5 ms. This resolves the flags as
+non-repeatable timing variation in this experiment.
+
+On the same Nikon lossless-12 corpus fixture, the nine-sample full runs measured
+CPU export at 8,274→7,656 ms and GPU export wall time at 328.2→327.5 ms.
+CPU/GPU agreement stayed at max 1 LSB and mean 0.0025 LSB. These renderer
+measurements are separate from NAFNet inference and cached enhanced editing.

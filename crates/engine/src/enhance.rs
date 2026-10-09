@@ -27,6 +27,8 @@ pub const RELEASE_URL: &str = "https://github.com/SarimSyed/lightcraft/releases/
 pub const REDISTRIBUTION_VERIFIED: bool = false;
 static SCRATCH_ID: AtomicU64 = AtomicU64::new(0);
 type SharedResult = Arc<Mutex<Option<(String, Arc<Rgb32f>)>>>;
+#[cfg(not(target_arch = "wasm32"))]
+type SharedModel = Arc<Mutex<Option<(String, Arc<lightcraft_denoise::NafNet>)>>>;
 type SharedOriginal = Arc<Mutex<Option<(String, DecodedSource, String)>>>;
 
 fn selection() -> DenoiseModel {
@@ -66,6 +68,7 @@ pub struct SourceResolver {
     origin: Source,
     cache_dir: PathBuf,
     model_dir: PathBuf,
+    model: SharedModel,
     calibration: u64,
     memory: SharedResult,
     original: SharedOriginal,
@@ -121,15 +124,7 @@ impl SourceResolver {
             let r = region.unwrap_or(Region { x: 0, y: 0, width: cached.width, height: cached.height });
             (if region.is_none() { cached } else { Arc::new(crop(&cached, r)?) }, r, false, "cache".into(), None, 0)
         } else {
-            let path = self.model_dir.join(MODEL_FILE);
-            #[cfg(target_os = "linux")]
-            let network = lightcraft_denoise::NafNet::load_vulkan(&path, lightcraft_gpu::compute_device(), lightcraft_gpu::unavailable_reason);
-            #[cfg(not(target_os = "linux"))]
-            let network = lightcraft_denoise::NafNet::load_accelerated(&path);
-            let network = network.map_err(|e| format!("{e}; install or restore the verified model to regenerate this photo's result"))?;
-            if network.checkpoint_digest != model.checkpoint {
-                return Err("Checkpoint checksum mismatch; reinstall NAFNet SIDD width-32".into());
-            }
+            let network = self.network(model)?;
             let input = lightcraft_denoise::model_input(&source.image).map_err(|e| e.to_string())?;
             let prediction = network.infer(&input, region, cancel, progress).map_err(|e| e.to_string())?;
             let image = lightcraft_denoise::restore_working(&source.image, &prediction.image, Some(prediction.region)).map_err(|e| e.to_string())?;
@@ -144,6 +139,50 @@ impl SourceResolver {
         }
         cancel.check().map_err(|e| e.to_string())?;
         Ok(Completed { original: source, enhanced: image, region: r, fallback, backend, fallback_reason, gpu_buffer_bytes })
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    fn network(&self, selection: &DenoiseModel) -> std::result::Result<Arc<lightcraft_denoise::NafNet>, String> {
+        let path = self.model_dir.join(MODEL_FILE);
+        let origin = Source::File { path: path.to_string_lossy().into() };
+        #[cfg(target_os = "linux")]
+        let availability = lightcraft_gpu::unavailable_reason();
+        #[cfg(not(target_os = "linux"))]
+        let availability: Option<String> = None;
+        let identity = format!("{}:{availability:?}", stamp(&origin));
+        let cached = self
+            .model
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .filter(|(key, network)| key == &identity && network.checkpoint_digest == selection.checkpoint)
+            .map(|(_, network)| network.clone());
+        if let Some(network) = cached {
+            #[cfg(target_os = "linux")]
+            let retry_gpu = network.backend() == "CPU" && availability.is_none();
+            #[cfg(not(target_os = "linux"))]
+            let retry_gpu = false;
+            if !retry_gpu {
+                return Ok(network);
+            }
+        }
+        // Loading/uploading and dropping GPU resources must not hold the inspection lock.
+        let previous = self.model.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+        drop(previous);
+        #[cfg(target_os = "linux")]
+        let network = lightcraft_denoise::NafNet::load_vulkan(&path, lightcraft_gpu::compute_device(), lightcraft_gpu::unavailable_reason);
+        #[cfg(not(target_os = "linux"))]
+        let network = lightcraft_denoise::NafNet::load_accelerated(&path);
+        let network = network.map_err(|e| format!("{e}; install or restore the verified model to regenerate this photo's result"))?;
+        if network.checkpoint_digest != selection.checkpoint {
+            return Err("Checkpoint checksum mismatch; reinstall NAFNet SIDD width-32".into());
+        }
+        if format!("{}:{availability:?}", stamp(&origin)) != identity {
+            return Err("Checkpoint changed while loading; reinstall or retry NAFNet".into());
+        }
+        let network = Arc::new(network);
+        let previous = self.model.lock().unwrap_or_else(std::sync::PoisonError::into_inner).replace((identity, network.clone()));
+        drop(previous);
+        Ok(network)
     }
     #[cfg(target_arch = "wasm32")]
     fn process(
@@ -231,6 +270,8 @@ impl Preview {
     }
 }
 pub struct Enhancer {
+    #[cfg(not(target_arch = "wasm32"))]
+    model: SharedModel,
     pub model_dir: PathBuf,
     pub background: bool,
     pub preview: Option<Preview>,
@@ -253,6 +294,8 @@ impl Default for Enhancer {
                 .map(PathBuf::from)
                 .or_else(|| crate::camera_profiles::config_dir().map(|d| d.join("models").join("nafnet")))
                 .unwrap_or_else(|| std::env::temp_dir().join("lightcraft-models").join("nafnet")),
+            #[cfg(not(target_arch = "wasm32"))]
+            model: Default::default(),
             background: false,
             preview: None,
             status: Arc::new(Mutex::new(Status::default())),
@@ -291,7 +334,21 @@ impl Enhancer {
                 }
             }
         }
-        crate::memory::Usage::new(images.len(), images.iter().map(|image| image.data.len().saturating_mul(12)).sum())
+        let mut usage = crate::memory::Usage::new(images.len(), images.iter().map(|image| image.data.len().saturating_mul(12)).sum());
+        let (cpu, _) = self.model_bytes();
+        if cpu > 0 {
+            usage.count += 1;
+            usage.bytes = usage.bytes.saturating_add(cpu);
+        }
+        usage
+    }
+    pub(crate) fn model_bytes(&self) -> (usize, u64) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.model.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_ref().map_or((0, 0), |(_, model)| model.resident_bytes())
+        }
+        #[cfg(target_arch = "wasm32")]
+        (0, 0)
     }
     pub fn status(&self) -> Status {
         self.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
@@ -331,6 +388,7 @@ impl Session {
                 origin: photo.source.clone(),
                 cache_dir,
                 model_dir: self.enhancer.model_dir.clone(),
+                model: self.enhancer.model.clone(),
                 calibration: crate::camera_profiles::cache_key(),
                 memory: self.enhancer.memory.clone(),
                 original: self.enhancer.original.clone(),
