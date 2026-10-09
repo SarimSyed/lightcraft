@@ -65,7 +65,7 @@ Priorities, in order. Each points at tracker rows in [`docs/parity.md`](docs/par
 6. **AI model strategy** (maintainer decision): which permissively licensed models (or our own training) for
    segmentation masks and denoise; then pure-Rust inference. Unblocks M12 and Enhance. Object / Describe masks now
    run Meta's SAM 3 in pure Rust (optional, user-consented download under the non-OSI SAM License; CDN mirrors still
-   to be set up, docs/ai-masks.md). NAFNet SIDD width-32 RGB-stage denoise is implemented with a reusable non-destructive result; publish verified, redistribution-approved weights and broaden photographic RAW validation beyond the checked ISO 800 DNG and ISO 200 NEF (docs/denoise.md). Subject / Sky / People and other Enhance models remain open.
+   to be set up, docs/ai-masks.md). NAFNet SIDD width-32 RGB-stage denoise is implemented with a reusable non-destructive result and optimized pure-Rust CPU kernels on Linux; full-resolution processing still takes time. Publish verified, redistribution-approved weights and broaden photographic RAW validation beyond the checked ISO 800 DNG and ISO 200 NEF (docs/denoise.md). Linux GPU inference, Subject / Sky / People and other Enhance models remain open.
 7. **Then:** HDR (Q), the Classic output modules (Print first, then Map view, Book, Slideshow), video (R), localisation
    and accessibility.
 

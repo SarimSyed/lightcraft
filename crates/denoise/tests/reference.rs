@@ -2,17 +2,41 @@
 use lightcraft_denoise::{Cancellation, Denoiser, NafNet, Region, SrgbRgb};
 use lightcraft_raster::Rgb32f;
 
+/// Opt-in, hardware-specific performance gate; normal CI has no wall-clock assertions.
+#[test]
+#[ignore = "requires an explicit CPU tile latency budget and real checkpoint"]
+fn cpu_tile_inference_meets_explicit_latency_budget() {
+    let dir = std::path::PathBuf::from(std::env::var("LIGHTCRAFT_NAFNET_REFERENCE").expect("required model bundle absent"));
+    let budget_ms: f64 = std::env::var("LIGHTCRAFT_NAFNET_TILE_BUDGET_MS").expect("explicit latency budget required").parse().unwrap();
+    assert!(budget_ms.is_finite() && budget_ms > 0.0);
+    let model = NafNet::load(&dir.join("nafnet-sidd-width32-v1.safetensors")).unwrap();
+    let mut image = Rgb32f::new(256, 256);
+    for (i, pixel) in image.data.iter_mut().enumerate() {
+        *pixel = [0.3 + (i % 23) as f32 * 0.004, 0.5, 0.7];
+    }
+    let input = SrgbRgb::new(image).unwrap();
+    model.infer_patch(&input, &Cancellation::default()).unwrap(); // warm up the CPU kernels
+    let mut timings = Vec::new();
+    for _ in 0..3 {
+        let started = std::time::Instant::now();
+        model.infer_patch(&input, &Cancellation::default()).unwrap();
+        timings.push(started.elapsed().as_secs_f64() * 1000.0);
+    }
+    println!("CPU 256px tile inference milliseconds: {timings:?}");
+    assert!(timings.iter().all(|ms| *ms <= budget_ms), "CPU tile exceeds {budget_ms} ms budget: {timings:?}");
+}
+
 #[test]
 fn author_checkpoint_matches_independent_pytorch_padding_and_overlap() {
     let dir = std::path::PathBuf::from(std::env::var("LIGHTCRAFT_NAFNET_REFERENCE").expect("required reference bundle absent"));
     let model = NafNet::load(&dir.join("nafnet-sidd-width32-v1.safetensors")).unwrap();
     let refs = candle_core::safetensors::load(dir.join("reference.safetensors"), &candle_core::Device::Cpu).unwrap();
-    for name in ["padding", "tiles"] {
+    for name in ["tiny", "padding", "tiles"] {
         let input = &refs[&format!("{name}.input")];
         let (_, _, h, w) = input.dims4().unwrap();
         let data = input.permute((0, 2, 3, 1)).unwrap().flatten_all().unwrap().to_vec1::<f32>().unwrap();
         let image = Rgb32f { width: w, height: h, data: data.as_chunks::<3>().0.to_vec() };
-        let actual = if name == "padding" {
+        let actual = if name != "tiles" {
             model.infer_patch(&SrgbRgb::new(image.clone()).unwrap(), &Cancellation::default()).unwrap()
         } else {
             model.infer(&SrgbRgb::new(image.clone()).unwrap(), None, &Cancellation::default(), &|_, _| {}).unwrap().image

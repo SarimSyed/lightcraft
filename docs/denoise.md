@@ -116,6 +116,34 @@ finite weights are checked. Sources are bounded at 100 megapixels, 32768 pixels
 per edge and 512 MiB encoded data. Worker panics become errors through the existing
 guard. CPU throughput on large images is a practical limitation.
 
+### CPU execution
+
+On Linux (and other CPU backends), NAFNet uses bounded pure-Rust fused channel
+normalization and direct 3×3 depthwise stencils. Its 1×1 convolutions reshape the
+activation into Candle matrix products without an extra input copy. This replaces
+per-channel convolution launches and intermediate normalization tensors, while
+retaining the same F32 weights, epsilon, global pooling, padding and tile order.
+Metal retains the existing tensor path. Linux GPU inference remains unimplemented.
+
+The denoiser crate is optimized at level 3 in development builds as well as release
+builds, so the fused loops receive compiler vectorization during native editing.
+No additional product dependency or machine-specific CPU instruction requirement
+is introduced. Existing cached corrections remain compatible; Amount still reuses
+them without inference.
+
+An opt-in public API latency test takes an explicit hardware-specific budget:
+
+```sh
+LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
+LIGHTCRAFT_NAFNET_TILE_BUDGET_MS=500 \
+  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+    cpu_tile_inference_meets_explicit_latency_budget -- --ignored --nocapture --test-threads=1
+```
+
+Run timing tests on an otherwise idle machine. Normal CI has no wall-clock gate;
+the required real-checkpoint job checks independent PyTorch outputs, including
+a 1×1 input whose padded network bottleneck is also 1×1.
+
 ## Validation and remaining scope
 
 Normal CI is network-independent. `.github/workflows/denoise-validation.yml` adds
@@ -172,6 +200,41 @@ components. No obvious grid seams appeared in the inspected crop; this limited
 inspection does not prove artifact-free output for every scene or camera. There
 is no paired clean ground truth for these RAWs, and no Lightroom comparison.
 Broader high-ISO, highlight, colour and fine-detail validation remains open.
+
+### Linux CPU optimization (2026-10-09)
+
+Matched runs of the previous and optimized implementations used the same pinned
+Canon ISO 800 DNG above (3264×2448, 221 full-image tiles), on the same Ryzen 5 9600X,
+Linux, native development builds, default CPU thread settings. The full runs were
+sequential with no other validation build running. These remain local observations,
+not a universal latency guarantee or a Linux GPU benchmark.
+
+| Public operation / process measurement | Previous | Optimized |
+|---|---:|---:|
+| 512×320 source-crop preview, including decode (12 tiles) | 16.93 s | 4.50 s |
+| Full Apply, decoded original already retained | 303.47 s | 75.19 s |
+| Peak process RSS, decode + preview + Apply + cached renders | 781,548 KiB | 731,092 KiB |
+| Cached Amount 50 / 100 / 50, 1024px renders | 40.3 / 41.0 / 40.1 ms | 40.1 / 38.6 / 39.2 ms |
+
+Full Apply is about 4.0× faster; retained enhancement memory remains 195,698,688
+bytes. Three warmed public 256px tile calls fell from 1,406–1,426 ms to 370–374 ms,
+passing the explicit 500 ms local budget. The budget test is opt-in, not normal CI.
+PyTorch maximum errors were 5.96e-8 (1×1 input), 1.19e-7 (padding) and 1.052e-5
+(overlapping tiles). Procedural denoising MSE and brightness requirements still pass;
+crop/full inference remains exactly equal and cancellation still returns an error.
+
+The saved 1024px full renders differ from the previous implementation by at most
+one 8-bit level (57 changed channel samples at Amount 50, 42 at Amount 100).
+Amount zero and Before are pixel-identical. The photographic crop remains finite,
+including its 5,405 original out-of-range channel samples. This preserves the
+existing result's quality; it does not close the broader photographic validation
+or Linux GPU-inference gaps. Large 24 MP photos still require hundreds of tiles.
+
+Real-checkpoint engine tests and headless UI tests pass, covering safe Apply,
+undo/cache reuse, stale results, cancellation and Before. An English/Japanese
+headless dialog screenshot review completed. The current native control probe
+timed out before inspection; native window responsiveness remains unverified by
+this optimization run.
 
 Reproduce photographic crops and optional full processing with development tools:
 

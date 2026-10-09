@@ -6,6 +6,12 @@ The sole implementation is the authors' NAFNet SIDD width-32 network with ordina
 global pooling. Native CPU inference uses Candle 0.9.2; macOS can use Metal and
 retry on CPU. The browser cannot run inference.
 
+The CPU network uses fused, bounded F32 channel normalization and direct depthwise
+3×3 stencils, plus zero-copy matrix products for its 1×1 convolutions. These avoid
+Candle's per-channel convolution launches and intermediate normalization tensors.
+The architecture, weights, global pooling and tiling remain unchanged. No additional
+native library or GPU driver is needed on Linux.
+
 `model_input` / `restore_working` implement the versioned Rec.2020 correction
 adapter. `infer` uses full-source-anchored 256-pixel tiles, 64-pixel overlap and
 normalized tapered blending. A region evaluates exactly the same contributing

@@ -48,7 +48,7 @@ def main():
     torch.set_num_threads(4)
     refs = {}
     with torch.no_grad():
-        for name, h, w in [("padding", 17, 29), ("tiles", 193, 257)]:
+        for name, h, w in [("tiny", 1, 1), ("padding", 17, 29), ("tiles", 193, 257)]:
             y, x = np.indices((h, w))
             clean = np.stack([.25 + x / w * .25, .35 + y / h * .1, .45 + x / w * .1], axis=-1).astype(np.float32)
             # Fixed procedural noise, identical across languages via stored public input.
@@ -57,7 +57,7 @@ def main():
             inp = torch.from_numpy(noisy).permute(2, 0, 1).unsqueeze(0).contiguous()
             refs[name + ".input"] = inp
             refs[name + ".clean"] = torch.from_numpy(clean).permute(2, 0, 1).unsqueeze(0).contiguous()
-            if name == "padding":
+            if name != "tiles":
                 refs[name + ".output"] = model(inp).contiguous()
                 continue
             result = torch.zeros_like(inp)

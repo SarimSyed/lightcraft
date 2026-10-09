@@ -104,6 +104,11 @@ opt-level = 2
 [profile.dev]
 opt-level = 1
 
+# The denoiser's fused per-pixel CPU kernels need loop vectorization during native
+# development too; release builds already use level 3.
+[profile.dev.package.lightcraft-denoise]
+opt-level = 3
+
 [profile.release]
 debug = "line-tables-only"
 

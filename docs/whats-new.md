@@ -2,6 +2,11 @@
 
 ## October 2026
 
+### AI denoise
+- Fused normalization and depthwise convolution plus fewer tensor copies accelerate
+  NAFNet's CPU inference on Linux. The model, overlap and reusable result stay the same.
+  See [measured validation and remaining limits](denoise.md).
+
 ### RAW decoding
 - Sony ILCE-7M4 downsized lossless ARWs now decode subsampled YCbCr tiles into linear RGB,
   preserving RAW editing & full-resolution export instead of using embedded JPEG previews.
