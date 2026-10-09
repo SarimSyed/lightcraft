@@ -133,7 +133,7 @@ conversion metadata. It also runs the pinned author's architecture to generate
 independent padding and overlap reference tensors. A manually installed bundle
 is checked against the pinned digest before inference. The normal persistent
 model folder is `<LightCraft config>/models/nafnet`, shown by `enhance.model.status`.
-The upstream notices are retained in `crates/denoise/NOTICE`.
+The upstream notices are retained in `crates/nafnet/NOTICE`.
 
 ## Commands and persistence
 
@@ -206,7 +206,7 @@ An opt-in public API latency test takes an explicit hardware-specific budget:
 ```sh
 LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
 LIGHTCRAFT_NAFNET_TILE_BUDGET_MS=500 \
-  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+  cargo test -p lightcraft-nafnet --features reference-validation --test reference \
     cpu_tile_inference_meets_explicit_latency_budget -- --ignored --nocapture --test-threads=1
 ```
 
@@ -356,7 +356,7 @@ Hardware tests explicitly require Vulkan, so CPU fallback cannot pass them:
 
 ```sh
 LIGHTCRAFT_GPU_BACKEND=vulkan LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
-  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+  cargo test -p lightcraft-nafnet --features reference-validation --test reference \
     gpu_ -- --ignored --nocapture --test-threads=1
 LIGHTCRAFT_REQUIRE_DENOISE_GPU=1 LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
   cargo test -p lightcraft-engine --features reference-validation --test denoise
@@ -437,7 +437,7 @@ first tile. Reproduce on an otherwise idle physical GPU:
 ```sh
 LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle \
 LIGHTCRAFT_NAFNET_GPU_TILE_BUDGET_MS=35 \
-  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+  cargo test -p lightcraft-nafnet --features reference-validation --test reference \
     vulkan_tile_inference_meets_explicit_latency_budget -- --ignored --nocapture --test-threads=1
 ```
 
@@ -518,10 +518,10 @@ require weights and a physical GPU and never accept a CPU fallback as a pass:
 
 ```sh
 LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle LIGHTCRAFT_NAFNET_GPU_TILE_BUDGET_MS=25 \
-  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+  cargo test -p lightcraft-nafnet --features reference-validation --test reference \
     vulkan_tile_inference -- --ignored --nocapture --test-threads=1
 LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle LIGHTCRAFT_NAFNET_GPU_IMAGE_BUDGET_MS=275 \
-  cargo test -p lightcraft-denoise --features reference-validation --test reference \
+  cargo test -p lightcraft-nafnet --features reference-validation --test reference \
     vulkan_image_inference -- --ignored --nocapture --test-threads=1
 LIGHTCRAFT_NAFNET_REFERENCE=/path/to/bundle LIGHTCRAFT_NAFNET_PREVIEW_BUDGET_MS=100 \
   cargo test -p lightcraft-engine --features reference-validation --test denoise \
@@ -561,3 +561,45 @@ On the same Nikon lossless-12 corpus fixture, the nine-sample full runs measured
 CPU export at 8,274→7,656 ms and GPU export wall time at 328.2→327.5 ms.
 CPU/GPU agreement stayed at max 1 LSB and mean 0.0025 LSB. These renderer
 measurements are separate from NAFNet inference and cached enhanced editing.
+
+## Upstream integration (catalog v4)
+
+The RGB implementation now lives in `crates/nafnet` (`lightcraft-nafnet`). Its checkpoint, processing
+revision, commands and cached pixel format are unchanged. The decoder cache revision increases to v12
+for upstream camera-tone/NEF changes: older results remain on disk but need local regeneration with
+installed weights, preventing a correction from being mixed with differently decoded source pixels. `crates/denoise` is the separate upstream
+Bayer sensor backend, documented in [raw-denoise.md](raw-denoise.md). Amount alone activates neither
+backend: RGB requires its pinned model selection; RAW requires an explicit sensor switch with no RGB
+selection. Choosing RAW clears RGB selection only after model availability has been checked; applying
+RGB clears the RAW switch. These are ordinary per-photo undoable edits. Presets/copy never copy pixels.
+Catalog v4 preserves both fork preset provenance and upstream album order when reopening v3 libraries.
+Upstream camera-JPEG tone fitting and Tint-sign fixes can change older RAW renders; see [tint-direction.md](tint-direction.md).
+
+### Validation after the merge (2026-10-09)
+
+The unchanged checkpoint matches the independent PyTorch padding/tile reference on CPU
+(maximum error 1.06e-5) and Radeon RX 9060 XT Vulkan (2.39e-7), below the 1e-4 gate.
+The public engine tests cover preview/export agreement, one-step Apply/undo, reopening without
+weights when the new cache is present, missing results, cancellation and stale workers.
+The real-checkpoint headless UI tests cover Amount, Before, navigation, Apply and Cancel.
+
+Fresh release runs on the two Nikon D7100 ISO 6400 NEFs processed their full oriented
+4020 × 6036 sources on Vulkan without CPU fallback:
+
+| File | Full Apply | Cached Amount render at 1024px |
+|---|---:|---:|
+| `_SAR0625.NEF` | 12.01 s | 105–110 ms |
+| `_SAR0626.NEF` | 11.95 s | 105–110 ms |
+
+The first baseline render took 279–282 ms. The centre crop outputs are finite; `_SAR0626.NEF`
+includes 9,385 original out-of-range channel samples in that crop. These checks preserve the
+RGB correction contract; they do not establish Lightroom quality or camera-colour parity.
+No source files, model weights or private photographic fixtures are bundled in the merge.
+
+The merged headless control tour completed 109 requests with the two NEFs, including
+Compare candidate changes, Survey selection, Ctrl-wheel zoom, pan, preset removal, per-photo
+edit isolation, Amount without another inference, Before and Cancel. One batched review covered
+11 screenshots, including Japanese at 1200 × 800. This CPU-only snapshot run complements the
+physical Vulkan tests above. Native engine inspection and `ui.screenshot {headless:true}`
+also succeeded. The desktop session reported the native window as minimized before layout,
+so visible compositor drawing and native pointer interaction remain unverified in this run.

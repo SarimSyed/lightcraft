@@ -1,5 +1,5 @@
-use lightcraft_denoise::NafNet;
-use lightcraft_denoise::{Cancellation, SrgbRgb, model_input, restore_working};
+use lightcraft_nafnet::NafNet;
+use lightcraft_nafnet::{Cancellation, SrgbRgb, model_input, restore_working};
 use lightcraft_raster::Rgb32f;
 
 #[test]

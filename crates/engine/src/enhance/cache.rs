@@ -67,7 +67,7 @@ impl SourceResolver {
         };
         Ok(format!(
             "{:x}",
-            Sha256::digest(serde_json::to_vec(&(digest, "oriented-full-rec2020-decoder-v11", self.calibration, model)).map_err(|e| e.to_string())?)
+            Sha256::digest(serde_json::to_vec(&(digest, "oriented-full-rec2020-decoder-v12", self.calibration, model)).map_err(|e| e.to_string())?)
         ))
     }
     fn paths(&self, key: &str) -> (PathBuf, PathBuf) {
@@ -92,7 +92,7 @@ impl SourceResolver {
         {
             return Err("enhancement manifest differs from this source; regenerate AI denoise".into());
         }
-        let bytes = bounded_read(&image, lightcraft_denoise::MAX_PIXELS as u64 * 12 + 32 * 1024 * 1024)?;
+        let bytes = bounded_read(&image, lightcraft_nafnet::MAX_PIXELS as u64 * 12 + 32 * 1024 * 1024)?;
         if format!("{:x}", Sha256::digest(&bytes)) != meta.digest {
             return Err("damaged enhancement TIFF; regenerate AI denoise".into());
         }
@@ -113,13 +113,13 @@ impl SourceResolver {
             return Err("invalid enhancement TIFF sample count".into());
         }
         let image = Rgb32f { width: meta.width, height: meta.height, data: values.as_chunks::<3>().0.to_vec() };
-        lightcraft_denoise::validate(&image).map_err(|e| e.to_string())?;
+        lightcraft_nafnet::validate(&image).map_err(|e| e.to_string())?;
         let image = Arc::new(image);
         *self.memory.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((key.into(), image.clone()));
         Ok(Some(image))
     }
     pub(super) fn save(&self, key: &str, model: &DenoiseModel, image: &Rgb32f) -> std::result::Result<(), String> {
-        lightcraft_denoise::validate(image).map_err(|e| e.to_string())?;
+        lightcraft_nafnet::validate(image).map_err(|e| e.to_string())?;
         let (path, manifest) = self.paths(key);
         if let Source::File { path: original } = &self.origin {
             let original = std::fs::canonicalize(original).map_err(|e| format!("original unavailable: {e}"))?;

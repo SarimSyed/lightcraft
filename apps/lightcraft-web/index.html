@@ -24,13 +24,13 @@
   <script type="module">
     import init, { start, command } from "./lightcraft_web.js";
     (async () => {
-      // Compile once; the render workers (worker.js) instantiate the same compiled module.
+      // Compile once; the render workers instantiate the same compiled module.
       const module = await WebAssembly.compileStreaming(fetch("./lightcraft_web_bg.wasm"));
       globalThis.lightcraftModule = module;
       await init({ module_or_path: module });
       // automation: `await lightcraft.command("library.info", "{}")` → JSON text
       globalThis.lightcraft = { command };
-      start();
+      start(new Uint8Array());
     })().catch((e) => {
       console.error(e);
       const el = document.getElementById("lightcraft_loading");

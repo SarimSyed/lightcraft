@@ -1,7 +1,7 @@
 # Photo navigation
 
 Move the pointer over the photo and hold **Ctrl while scrolling** to zoom in or
-out. Zoom follows the pointer, from 6–1600%. The filmstrip, grid and editing panels
+out. Zoom follows the pointer, with keyboard steps from 6–1600% and continuous gestures bounded by Fit–1600%. Native pinch and two-finger pan also work. The filmstrip, grid and editing panels
 keep their usual scrolling. Detail, full-screen preview, Compare and Reference
 support photo zoom; Compare keeps the two views synchronized.
 
@@ -38,10 +38,12 @@ Navigation does not create edits. Cancel leaves saved settings alone. Apply stil
 processes the **whole source**, regardless of which crop is shown. Contributing
 tiles remain anchored to the full-source grid, matching full-image inference.
 
-The main Detail view renders up to **Settings → Performance → Preview size**,
-then scales that preview while zooming. For fine denoise assessment, use the AI
-dialog at 100% or a full-resolution export. Higher display magnification does not
-recover detail missing from a reduced-resolution Detail preview.
+The main Detail view keeps a canvas-sized whole-image preview for the Navigator/histogram and
+adds a source-resolution window when zoomed in. The default Preview size cap applies to the
+whole-image render; it does not cap the zoom window. Before/After uses matching windows. Compare,
+overlays and soft proofing still have coverage limitations described in the parity tracker.
+For denoise assessment, use native 100% in the AI dialog or Detail and compare with a full export.
+Both shortcut editors share the saved keymap; legacy fork zoom bindings migrate when loaded.
 
 ## Control channel
 

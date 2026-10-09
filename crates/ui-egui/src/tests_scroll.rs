@@ -1,6 +1,6 @@
 //! Headless tests of the photo grid's and the filmstrip's scrolling (issue #11): the user's
 //! scroll position stays put until the active photo changes; the mouse wheel scrolls the
-//! filmstrip sideways.
+//! filmstrip sideways. The filmstrip also shows which photos are selected (issue #187).
 
 use std::time::Duration;
 
@@ -59,7 +59,7 @@ fn control_wheel_zooms_the_photo_at_the_pointer_without_editing() {
     let ppp = h.view.ctx.pixels_per_point();
     h.request("ui.scroll", json!({"dy":80.0,"ctrl":true}), T);
     h.step();
-    assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Percent(p) if p > 200), "Ctrl+wheel zooms the photo");
+    assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Percent(p) if p > 200.0), "Ctrl+wheel zooms the photo");
     let zoomed = h.app.image_rect.unwrap();
     assert!((zoomed.min + anchor * zoomed.size()).distance(q) < 1.0, "zoom stays under the pointer");
     assert_eq!(h.view.ctx.pixels_per_point(), ppp, "photo zoom must not scale the interface");
@@ -80,9 +80,9 @@ fn photo_navigation_bindings_can_be_changed_and_saved() {
     let q = h.app.canvas_rect.unwrap().center();
     h.request("ui.move", json!({"x":q.x,"y":q.y}), T);
     h.request("ui.scroll", json!({"dy":80.0,"ctrl":true}), T);
-    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(200), "old binding is inactive");
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(200.0), "old binding is inactive");
     h.request("ui.scroll", json!({"dy":80.0,"alt":true}), T);
-    assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Percent(p) if p > 200));
+    assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Percent(p) if p > 200.0));
     let start = h.app.ui.pan;
     h.request("ui.drag", json!({"x":q.x,"y":q.y,"toX":q.x+50.0,"toY":q.y+30.0,"button":"middle"}), T);
     assert_ne!(h.app.ui.pan, start, "middle drag moves the view");
@@ -107,9 +107,9 @@ fn zoom_keys_can_be_rebound_without_conflicts_and_help_shows_the_binding() {
     assert_eq!(r["ok"], true, "{r}");
     h.request("ui.set", json!({"zoom":{"percent":100}}), T);
     h.request("ui.key", json!({"key":"=","cmd":true}), T);
-    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100));
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100.0));
     h.request("ui.key", json!({"key":"I","alt":true}), T);
-    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(200));
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(200.0));
     let r = h.request("engine.execute", json!({"command":"app.navigationBinding","params":{"command":"view.zoomOut","shortcut":"D"}}), T);
     assert_eq!(r["ok"], false, "reserved photo shortcut must be rejected");
     let menus = h.request("ui.menu.list", json!({}), T);
@@ -159,6 +159,33 @@ fn grid_keeps_the_users_scroll_position() {
 }
 
 #[test]
+fn deleting_photos_does_not_jump_the_grid_to_the_top() {
+    for view in ["photoGrid", "squareGrid"] {
+        for count in [1, 3] {
+            let mut h = demo(view);
+            let ids = h.app.session.visible_cloned();
+            let at = ids.len() / 2;
+            let r = h.request("engine.execute", json!({"command": "library.select", "params": {"ids": &ids[at..at + count]}}), T);
+            assert_eq!(r["ok"], true, "{r}");
+            idle(&mut h, 30);
+            let y = grid_y(&h);
+            assert!(y > 600.0, "selection is well below the top: {view}, {y}");
+            let r = h.request("engine.execute", json!({"command": "photo.delete"}), T);
+            assert_eq!(r["ok"], true, "{r}");
+            idle(&mut h, 60);
+            let next = ids[at + count];
+            assert!(grid_y(&h) > 600.0, "deleting scrolled to the top: {view}, {} → {}", y, grid_y(&h));
+            assert_eq!(h.app.session.active(), Some(next), "{view}, count {count}");
+            let canvas = h.app.canvas_rect.unwrap();
+            assert!(widget(&h, &format!("thumb:{}", next.0)).intersects(canvas), "the next survivor is in view");
+            let after = grid_y(&h);
+            idle(&mut h, 60);
+            assert_eq!(grid_y(&h), after, "idle frames preserve the new position");
+        }
+    }
+}
+
+#[test]
 fn filmstrip_wheel_scrolls_and_keeps_its_position() {
     let mut h = demo("detail");
     let first = h.app.session.visible_cloned()[0].0;
@@ -188,4 +215,55 @@ fn filmstrip_wheel_scrolls_and_keeps_its_position() {
     assert!(film_x(&h) < x1, "scrolled back to the active photo");
     let cell = widget(&h, &format!("film:{second}"));
     assert!(cell.left() >= 0.0 && cell.right() <= 1200.0, "the new active photo is in view ({cell:?})");
+}
+
+#[test]
+fn filmstrip_shows_every_selected_photo() {
+    let mut h = demo("detail");
+    let ids = h.app.session.visible_cloned();
+    let (first, second) = (ids[0].0, ids[1].0);
+    // a cell's background, left of its thumbnail
+    let fill = |h: &mut Headless, id: u64| {
+        let r = widget(h, &format!("film:{id}"));
+        let img = h.snapshot(SETTLE);
+        img.pixels[(r.center().y as usize) * img.width() + r.left() as usize + 4]
+    };
+    let active = fill(&mut h, first);
+    let idle = fill(&mut h, second);
+    assert_ne!(active, idle, "only the active photo is selected");
+    // Select All: the other photos are selected too, the first stays active
+    let r = h.request("engine.execute", json!({"command": "library.selectAll"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(h.app.session.active().map(|p| p.0), Some(first));
+    assert_eq!(fill(&mut h, second), active, "a selected photo that is not the active one looks selected");
+    // back to one photo; then what a ⌘-click on a filmstrip cell runs (toggle) adds the second
+    let r = h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [first]}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(fill(&mut h, second), idle);
+    let r = h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [second], "mode": "toggle"}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(fill(&mut h, second), active);
+}
+
+#[test]
+fn legacy_navigation_keys_and_the_general_shortcut_editor_share_one_keymap() {
+    let mut h = demo("detail");
+    let mut saved = serde_json::to_value(&h.app.ui).unwrap();
+    saved["settings"]["navigation"]["keys"] = json!({"view.zoomIn":"Alt+I"});
+    h.app.ui = serde_json::from_value::<crate::UiState>(saved).unwrap().sanitized();
+    h.request("ui.set", json!({"zoom":{"percent":100}}), T);
+    h.request("ui.key", json!({"key":"I","alt":true}), T);
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(200.0), "a saved fork shortcut survives migration");
+    h.app.run("app.setShortcut", json!({"id":"view.zoomIn","shortcut":"Alt+J"})).unwrap();
+    h.request("ui.key", json!({"key":"I","alt":true}), T);
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(200.0), "the old binding stays removed");
+    h.request("ui.key", json!({"key":"J","alt":true}), T);
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(400.0));
+    let menu = crate::menus::menu_entries(&h.app).into_iter().find(|e| e.id == "view.zoomIn").unwrap();
+    assert_eq!(menu.shortcut.as_deref(), Some("Alt+J"));
+    h.app.run("app.resetShortcuts", json!({})).unwrap();
+    assert!(h.app.ui.settings.navigation.keys.is_empty());
+    let saved = serde_json::to_string(&h.app.ui).unwrap();
+    let restored = serde_json::from_str::<crate::UiState>(&saved).unwrap().sanitized();
+    assert_eq!(crate::shortcuts::shortcut_of(&restored.settings.keymap, "view.zoomIn"), Some("Cmd+="));
 }

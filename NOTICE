@@ -14,10 +14,10 @@ omitted from this fork; the original terms are retained in docs/brand/LICENSE-br
 
 Third-party material
 
-crates/denoise (lightcraft-denoise) implements the NAFNet SIDD width-32 architecture
+crates/nafnet (lightcraft-nafnet) implements the NAFNet SIDD width-32 architecture
 of Liangyu Chen, Xiaojie Chu, Xiangyu Zhang and Jian Sun / megvii-model.
 Upstream: https://github.com/megvii-research/NAFNet (revision 2b4af71).
-MIT and BasicSR Apache-2.0 notices are retained in crates/denoise/NOTICE. The modified
+MIT and BasicSR Apache-2.0 notices are retained in crates/nafnet/NOTICE. The modified
 Rust/Candle port is licensed under Apache-2.0 only; it is not covered by the MIT option.
 Checkpoint files are not bundled; see docs/denoise.md for provenance and delivery gates.
 
@@ -38,6 +38,15 @@ The SAM 3 weights are not part of LightCraft and are never distributed with it. 
 the facebook/sam3 checkpoint only when they choose to (in the app, or by hand), under Meta's SAM
 License (https://github.com/facebookresearch/sam3/blob/main/LICENSE), a separate, non-OSI
 licence. See docs/ai-masks.md.
+
+Sensor RAW denoise weights are not part of LightCraft and are never distributed with it.
+The default build offers user-supplied models only. The optional rawnind-model
+feature offers a separately downloaded RawNIND UtNet2 Bayer checkpoint under
+GPL-3.0 (https://www.gnu.org/licenses/gpl-3.0.html), after the user accepts its terms.
+Commercial use is subject to those terms, including applicable source, licence and
+notice obligations on redistribution. Enabling that offer in releases remains a
+maintainer decision. The ONNX reader and CPU/GPU executor are our Rust implementation;
+no darktable, RawSpeed, LibRaw or other GPL decoder/runtime code is included.
 
 Builds made with craft-fonts (the optional CRAFT_FONTS_DIR build input; all official releases)
 also embed the fonts listed in https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md

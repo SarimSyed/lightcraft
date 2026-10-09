@@ -43,4 +43,4 @@ jobs:
       - name: Compare real checkpoint inference with independent reference
         env:
           LIGHTCRAFT_NAFNET_REFERENCE: ${{ runner.temp }}/nafnet/bundle
-        run: /usr/bin/time -v cargo test -p lightcraft-denoise --features reference-validation -- --nocapture
+        run: /usr/bin/time -v cargo test -p lightcraft-nafnet --features reference-validation -- --nocapture

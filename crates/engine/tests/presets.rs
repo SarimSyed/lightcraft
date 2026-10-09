@@ -173,3 +173,88 @@ fn incomplete_legacy_history_does_not_block_applying_new_presets_or_copying() {
     assert!(s.execute("preset.remove", &json!({})).is_err());
     s.execute("photo.virtualCopy", &json!({})).unwrap();
 }
+
+#[test]
+fn reopening_either_v3_schema_preserves_preset_removal_and_album_order() {
+    use lightcraft_engine::{
+        catalog::{MemStore, journal::SNAPSHOT},
+        library::LibraryStores,
+    };
+    // Both forks used v3; exercise each serialized schema through the library/command boundary.
+    for schema in ["fork", "upstream"] {
+        let mut s = Session::with_demo();
+        let id = s.active().unwrap();
+        s.execute("preset.apply", &json!({"id":"lc.bw-high-contrast"})).unwrap();
+        s.execute("develop.set", &json!({"control":"effects.clarity","value":23})).unwrap();
+        let a = s.execute("album.create", &json!({"name":"A"})).unwrap()["id"].as_u64().unwrap();
+        let b = s.execute("album.create", &json!({"name":"B"})).unwrap()["id"].as_u64().unwrap();
+        s.execute("album.reorder", &json!({"id":b,"before":a})).unwrap();
+        let mut catalog: serde_json::Value = serde_json::from_str(&s.catalog.to_snapshot()).unwrap();
+        fn remove_key(v: &mut serde_json::Value, key: &str) {
+            match v {
+                serde_json::Value::Object(o) => {
+                    o.remove(key);
+                    for child in o.values_mut() {
+                        remove_key(child, key);
+                    }
+                }
+                serde_json::Value::Array(a) => {
+                    for child in a {
+                        remove_key(child, key);
+                    }
+                }
+                _ => {}
+            }
+        }
+        remove_key(&mut catalog, if schema == "fork" { "order" } else { "preset" });
+        let store = MemStore::new();
+        store.set(SNAPSHOT, serde_json::to_vec(&json!({"format":"lightcraft-catalog","version":3,"seq":0,"catalog":catalog})).unwrap());
+        let mut reopened = Session::new();
+        let report = reopened
+            .open_library_in(
+                LibraryStores { dir: "v3-migration-test".into(), catalog: Box::new(store.clone()), files: Box::new(MemStore::new()), on_disk: false },
+                false,
+            )
+            .unwrap();
+        assert_eq!(report.upgraded_from, Some(3), "{schema} schema must be upgraded before edits");
+        let snap: serde_json::Value = serde_json::from_slice(&store.get(SNAPSHOT).unwrap()).unwrap();
+        assert_eq!(snap["version"], 4, "older divergent builds must refuse the merged catalog");
+        reopened.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+        if schema == "fork" {
+            reopened.execute("preset.remove", &json!({})).unwrap();
+            let result = reopened.develop_of(id).unwrap();
+            assert_eq!(result.light.contrast, 0.0);
+            assert_eq!(result.effects.clarity, 23.0);
+        } else {
+            let albums = reopened.catalog.album_children(None);
+            assert!(albums.iter().position(|x| x.id.0 == b).unwrap() < albums.iter().position(|x| x.id.0 == a).unwrap());
+        }
+        reopened.close_library().unwrap();
+    }
+}
+
+#[test]
+fn a_preset_applied_at_import_keeps_its_amount_and_removal_provenance() {
+    let dir = std::env::temp_dir().join(format!("lc-merge-import-preset-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("scene.png");
+    let pixels = vec![[80, 120, 160, 255]; 16 * 12];
+    let image = lightcraft_raster::Rgba8 { width: 16, height: 12, data: pixels };
+    let bytes = lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(&image), &Default::default()).unwrap();
+    std::fs::write(&path, &bytes).unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths":[path],"preset":"lc.bw-high-contrast"})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    s.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+    assert_eq!(s.execute("preset.status", &json!({})).unwrap()["amount"], 100.0);
+    s.execute("develop.set", &json!({"control":"effects.clarity","value":23})).unwrap();
+    s.execute("preset.amount", &json!({"amount":50})).unwrap();
+    s.execute("history.clear", &json!({})).unwrap();
+    s.execute("preset.remove", &json!({})).unwrap();
+    let d = s.develop_of(id).unwrap();
+    assert_eq!(d.treatment, lightcraft_develop::Treatment::Color);
+    assert_eq!(d.light.contrast, 0.0);
+    assert_eq!(d.effects.clarity, 23.0);
+    assert_eq!(std::fs::read(path).unwrap(), bytes);
+    std::fs::remove_dir_all(dir).unwrap();
+}

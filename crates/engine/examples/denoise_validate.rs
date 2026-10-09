@@ -13,7 +13,7 @@ fn main() -> Result<(), String> {
     // or private photographs are bundled with the product or committed to the repository.
     if args.get(3).is_some_and(|mode| mode == "input") {
         let (image, _) = lightcraft_engine::files::load_enhancement(source)?;
-        let input = lightcraft_denoise::model_input(&image).map_err(|e| e.to_string())?;
+        let input = lightcraft_nafnet::model_input(&image).map_err(|e| e.to_string())?;
         std::fs::write(output.join("input.f32"), bytemuck::cast_slice(&input.image().data)).map_err(|e| e.to_string())?;
         println!("{}", json!({"source":source,"width":image.width,"height":image.height,"encoding":"interleaved native-endian F32 sRGB"}));
         return Ok(());

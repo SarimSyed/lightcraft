@@ -5,16 +5,23 @@ use serde_json::{Value, json};
 
 pub const KEY_COMMANDS: &[&str] = &["view.zoomIn", "view.zoomOut", "view.zoomFit", "view.zoom100", "view.zoomToggle"];
 pub fn shortcut<'a>(app: &'a LightcraftApp, id: &str, default: Option<&'a str>) -> Option<&'a str> {
-    if KEY_COMMANDS.contains(&id) {
-        app.ui.settings.navigation.keys.get(id).map(String::as_str).or(default).filter(|s| !s.is_empty())
-    } else {
-        default
+    crate::shortcuts::binding(&app.ui.settings.keymap, id, default)
+}
+
+/// Fold the fork's earlier zoom bindings into the general editor without replacing newer choices.
+pub fn migrate(settings: &mut crate::state::AppSettings) {
+    for (id, key) in std::mem::take(&mut settings.navigation.keys) {
+        if KEY_COMMANDS.contains(&id.as_str()) && (key.is_empty() || crate::shortcuts::parse(&key).is_some()) {
+            settings.keymap.entry(id).or_insert(key);
+        }
     }
 }
+
 pub fn binding(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
     let id = p.get("command").and_then(Value::as_str).filter(|id| KEY_COMMANDS.contains(id)).ok_or("Choose a photo navigation command")?;
     if p.get("reset") == Some(&Value::Bool(true)) {
         app.ui.settings.navigation.keys.remove(id);
+        crate::shortcuts::reset(&mut app.ui.settings.keymap, id)?;
         return Ok(Value::Null);
     }
     let key = p.get("shortcut").and_then(Value::as_str).filter(|s| s.len() <= 64).ok_or("shortcut string required (empty disables the key)")?;
@@ -44,7 +51,7 @@ pub fn binding(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
             return Err("That shortcut already has an action. Choose another binding.".into());
         }
     }
-    app.ui.settings.navigation.keys.insert(id.into(), key.into());
+    crate::shortcuts::assign(&mut app.ui.settings.keymap, id, Some(key))?;
     Ok(json!({"command":id,"shortcut":key}))
 }
 
@@ -112,8 +119,8 @@ pub fn zoom_at(app: &mut LightcraftApp, p: &Value) -> Result<Value, String> {
     if !cur.is_finite() || cur <= 0.0 {
         return Err("view.zoomAt: invalid image size".into());
     }
-    let percent = (cur * factor).round().clamp(6.0, 1600.0) as u32;
-    let new_size = img.size() * (percent as f32 / cur.max(0.001));
+    let percent = (cur * factor).clamp(6.0, 1600.0);
+    let new_size = img.size() * (percent / cur.max(0.001));
     if !new_size.x.is_finite() || !new_size.y.is_finite() {
         return Err("view.zoomAt: invalid zoom size".into());
     }

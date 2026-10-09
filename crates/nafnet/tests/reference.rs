@@ -1,5 +1,5 @@
 #![cfg(feature = "reference-validation")]
-use lightcraft_denoise::{Cancellation, Denoiser, NafNet, Region, SrgbRgb};
+use lightcraft_nafnet::{Cancellation, Denoiser, NafNet, Region, SrgbRgb};
 use lightcraft_raster::Rgb32f;
 
 /// Opt-in, hardware-specific performance gate; normal CI has no wall-clock assertions.

@@ -5,9 +5,9 @@ mod cache;
 use crate::media::{SourceLevel, SourceRef};
 use crate::{Result, Session, media::DecodedSource};
 use lightcraft_catalog::{PhotoId, Source};
-use lightcraft_denoise::Cancellation;
-pub use lightcraft_denoise::Region;
 use lightcraft_develop::{DenoiseModel, DevelopSettings};
+use lightcraft_nafnet::Cancellation;
+pub use lightcraft_nafnet::Region;
 use lightcraft_raster::{Rgb32f, Rgba8};
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -29,14 +29,14 @@ pub const REDISTRIBUTION_VERIFIED: bool = false;
 static SCRATCH_ID: AtomicU64 = AtomicU64::new(0);
 type SharedResult = Arc<Mutex<Option<(String, Arc<Rgb32f>)>>>;
 #[cfg(not(target_arch = "wasm32"))]
-type SharedModel = Arc<Mutex<Option<(String, Arc<lightcraft_denoise::NafNet>)>>>;
+type SharedModel = Arc<Mutex<Option<(String, Arc<lightcraft_nafnet::NafNet>)>>>;
 type SharedOriginal = Arc<Mutex<Option<(String, DecodedSource, String)>>>;
 
 fn selection() -> DenoiseModel {
     DenoiseModel {
-        id: lightcraft_denoise::MODEL_ID.into(),
+        id: lightcraft_nafnet::MODEL_ID.into(),
         checkpoint: MODEL_DIGEST.into(),
-        processing_revision: lightcraft_denoise::PROCESSING_REVISION.into(),
+        processing_revision: lightcraft_nafnet::PROCESSING_REVISION.into(),
     }
 }
 fn validate_selection(model: &DenoiseModel) -> std::result::Result<(), String> {
@@ -88,7 +88,7 @@ impl SourceResolver {
         cancel: &Cancellation,
         progress: &(dyn Fn(usize, usize) + Sync),
     ) -> std::result::Result<Completed, String> {
-        use lightcraft_denoise::Denoiser;
+        use lightcraft_nafnet::Denoiser;
         validate_selection(model)?;
         cancel.check().map_err(|e| e.to_string())?;
         // ponytail: one enhancement at a time per session, including cache regeneration.
@@ -112,7 +112,7 @@ impl SourceResolver {
                     }
                     _ => self.source.load_source()?,
                 };
-                lightcraft_denoise::validate(&source.image).map_err(|e| e.to_string())?;
+                lightcraft_nafnet::validate(&source.image).map_err(|e| e.to_string())?;
                 let digest = self.content_digest(&source.image)?;
                 *self.original.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some((initial.clone(), source.clone(), digest));
                 source
@@ -128,9 +128,9 @@ impl SourceResolver {
             (if region.is_none() { cached } else { Arc::new(crop(&cached, r)?) }, r, false, "cache".into(), None, 0)
         } else {
             let network = self.network(model)?;
-            let input = lightcraft_denoise::model_input(&source.image).map_err(|e| e.to_string())?;
+            let input = lightcraft_nafnet::model_input(&source.image).map_err(|e| e.to_string())?;
             let prediction = network.infer(&input, region, cancel, progress).map_err(|e| e.to_string())?;
-            let image = lightcraft_denoise::restore_working(&source.image, &prediction.image, Some(prediction.region)).map_err(|e| e.to_string())?;
+            let image = lightcraft_nafnet::restore_working(&source.image, &prediction.image, Some(prediction.region)).map_err(|e| e.to_string())?;
             (Arc::new(image), prediction.region, prediction.cpu_fallback, prediction.backend, prediction.fallback_reason, prediction.gpu_buffer_bytes)
         };
         cancel.check().map_err(|e| e.to_string())?;
@@ -144,7 +144,7 @@ impl SourceResolver {
         Ok(Completed { original: source, enhanced: image, region: r, fallback, backend, fallback_reason, gpu_buffer_bytes })
     }
     #[cfg(not(target_arch = "wasm32"))]
-    fn network(&self, selection: &DenoiseModel) -> std::result::Result<Arc<lightcraft_denoise::NafNet>, String> {
+    fn network(&self, selection: &DenoiseModel) -> std::result::Result<Arc<lightcraft_nafnet::NafNet>, String> {
         let path = self.model_dir.join(MODEL_FILE);
         let origin = Source::File { path: path.to_string_lossy().into() };
         #[cfg(target_os = "linux")]
@@ -172,9 +172,9 @@ impl SourceResolver {
         let previous = self.model.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
         drop(previous);
         #[cfg(target_os = "linux")]
-        let network = lightcraft_denoise::NafNet::load_vulkan(&path, lightcraft_gpu::compute_device(), lightcraft_gpu::unavailable_reason);
+        let network = lightcraft_nafnet::NafNet::load_vulkan(&path, lightcraft_gpu::compute_device(), lightcraft_gpu::unavailable_reason);
         #[cfg(not(target_os = "linux"))]
-        let network = lightcraft_denoise::NafNet::load_accelerated(&path);
+        let network = lightcraft_nafnet::NafNet::load_accelerated(&path);
         let network = network.map_err(|e| format!("{e}; install or restore the verified model to regenerate this photo's result"))?;
         if network.checkpoint_digest != selection.checkpoint {
             return Err("Checkpoint checksum mismatch; reinstall NAFNet SIDD width-32".into());
@@ -202,8 +202,8 @@ impl SourceResolver {
     pub fn resolve(&self, settings: &DevelopSettings) -> std::result::Result<DecodedSource, String> {
         let model = settings.enhance.model.as_ref().ok_or("no denoise model selected")?;
         let result = crate::guard::catch("AI denoise source", || self.process(model, None, 0, &Cancellation::default(), &|_, _| {}))??;
-        let image = lightcraft_denoise::blend(&result.original.image, &result.enhanced, settings.enhance.denoise).map_err(|e| e.to_string())?;
-        Ok(DecodedSource { image: Arc::new(image), info: result.original.info, camera_tone: result.original.camera_tone })
+        let image = lightcraft_nafnet::blend(&result.original.image, &result.enhanced, settings.enhance.denoise).map_err(|e| e.to_string())?;
+        Ok(DecodedSource { image: Arc::new(image), info: result.original.info, camera_tone: result.original.camera_tone, denoised: None })
     }
 }
 fn expanded_region<T>(image: &lightcraft_raster::Image<T>, region: Region, halo: usize) -> std::result::Result<Region, String> {
@@ -222,7 +222,7 @@ fn expanded_region<T>(image: &lightcraft_raster::Image<T>, region: Region, halo:
 }
 fn crop<T: Copy>(image: &lightcraft_raster::Image<T>, region: Region) -> std::result::Result<lightcraft_raster::Image<T>, String> {
     expanded_region(image, region, 0)?;
-    let count = region.width.checked_mul(region.height).filter(|n| *n <= lightcraft_denoise::MAX_PIXELS).ok_or("Preview allocation exceeds limit")?;
+    let count = region.width.checked_mul(region.height).filter(|n| *n <= lightcraft_nafnet::MAX_PIXELS).ok_or("Preview allocation exceeds limit")?;
     let mut data = Vec::with_capacity(count);
     for y in region.y..region.y + region.height {
         data.extend_from_slice(
@@ -291,7 +291,7 @@ impl Preview {
         let image = if before {
             (*self.context_original).clone()
         } else {
-            lightcraft_denoise::blend(&self.context_original, &self.context_enhanced, amount).map_err(|e| e.to_string())?
+            lightcraft_nafnet::blend(&self.context_original, &self.context_enhanced, amount).map_err(|e| e.to_string())?
         };
         let rendered =
             lightcraft_pipeline::render_source_crop(&self.source, image, (self.context_region.x, self.context_region.y), &self.info, &self.settings)?
@@ -455,7 +455,7 @@ impl Session {
             .transpose()?
             .unwrap_or(!self.enhancer.background);
         let photo = self.catalog.photo(id).filter(|photo| !photo.deleted).cloned().ok_or_else(|| crate::cmd::bad(c, "photo no longer exists"))?;
-        if (photo.width as usize).checked_mul(photo.height as usize).is_none_or(|n| n == 0 || n > lightcraft_denoise::MAX_PIXELS)
+        if (photo.width as usize).checked_mul(photo.height as usize).is_none_or(|n| n == 0 || n > lightcraft_nafnet::MAX_PIXELS)
             || photo.width > 32768
             || photo.height > 32768
         {
@@ -571,6 +571,7 @@ impl Session {
                         .as_ref()
                         .clone();
                     settings.enhance.model = Some(pending.model);
+                    settings.enhance.denoise_on = None;
                     settings.enhance.denoise = pending.amount;
                     // Enhance is a single-photo operation even when Auto Sync is enabled.
                     let committed = self.execute_fn("enhance.denoise.apply", |s| {
@@ -667,7 +668,7 @@ impl Session {
     }
     pub fn denoise_model_status(&self) -> Value {
         let installed = std::fs::metadata(self.enhancer.model_dir.join(MODEL_FILE)).is_ok_and(|m| m.len() == MODEL_BYTES);
-        json!({"installed":installed,"model":lightcraft_denoise::MODEL_ID,"sha256":MODEL_DIGEST,"bytes":MODEL_BYTES,"directory":self.enhancer.model_dir,
+        json!({"installed":installed,"model":lightcraft_nafnet::MODEL_ID,"sha256":MODEL_DIGEST,"bytes":MODEL_BYTES,"directory":self.enhancer.model_dir,
             "licence":"MIT + BasicSR Apache-2.0 (code)","licenceUrl":"https://github.com/megvii-research/NAFNet/blob/main/LICENSE","redistributionVerified":REDISTRIBUTION_VERIFIED,"releaseUrl":RELEASE_URL,"download":self.enhancer.model_status.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()})
     }
     pub fn denoise_model_cancel(&mut self) {

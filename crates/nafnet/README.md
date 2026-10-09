@@ -1,0 +1,43 @@
+# lightcraft-nafnet (L3)
+
+UI-independent RGB-stage restoration. `Denoiser` accepts only validated float,
+sRGB-encoded RGB via `SrgbRgb`; sensor-domain models need a separate typed contract.
+The sole implementation is the authors' NAFNet SIDD width-32 network with ordinary
+global pooling. Native CPU inference uses Candle 0.9.2; macOS can use Metal and
+retry on CPU. Linux uses the engine-supplied wgpu Vulkan device with reported
+CPU fallback. The browser cannot run inference.
+
+The CPU network uses fused, bounded F32 channel normalization and direct depthwise
+3×3 stencils, plus zero-copy matrix products for its 1×1 convolutions. These avoid
+Candle's per-channel convolution launches and intermediate normalization tensors.
+The architecture, weights, global pooling and tiling remain unchanged. No additional
+native library is added. Vulkan uses the installed system driver. Its F32 matrix
+kernels reuse weights across output pixels and gather stride-two convolutions
+without im2col buffers. Deep normalization reduces channels in parallel with
+contiguous pixel loads; a bounded binding cache reuses immutable GPU parameters.
+Pointwise convolutions fuse attention/residual operations and SimpleGate; paired
+tile submissions reuse input staging and readback buffers. The engine retains one
+verified model/workspace between previews and Apply and accounts for its memory.
+
+`model_input` / `restore_working` implement the versioned Rec.2020 correction
+adapter. `infer` uses full-source-anchored 256-pixel tiles, 64-pixel overlap and
+normalized tapered blending. A region evaluates exactly the same contributing
+tiles and produces the same values as cropping a full inference. Cancellation
+is checked between consumed tiles and before/after each network operation. Linux
+may already have one additional tile queued when cancellation arrives.
+
+Normal API tests need no weights or network. Required reference validation:
+
+```sh
+LIGHTCRAFT_NAFNET_REFERENCE=/path/to/reference-bundle \
+  cargo test -p lightcraft-nafnet --features reference-validation --test reference
+```
+
+This deliberately fails if its model or independent references are missing.
+See [denoise documentation](../../docs/denoise.md) for provenance and delivery gates.
+
+Larger tiles/local pooling and detail-aware Amount blending were evaluated in
+development reference tooling and not retained after mixed/regressive paired
+scene results. The engine source-crop renderer now applies the photo's current
+colour/Detail settings with native radii and bounded surrounding context; this
+does not change network predictions or the processing/cache revision.

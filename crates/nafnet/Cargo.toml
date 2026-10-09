@@ -1,0 +1,32 @@
+[package]
+name = "lightcraft-nafnet"
+version.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+description = "RGB-stage NAFNet denoising (L3)"
+
+[features]
+reference-validation = []
+
+[lints]
+workspace = true
+
+[dependencies]
+lightcraft-raster.workspace = true
+lightcraft-color.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2 = "0.10"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+candle-core.workspace = true
+candle-nn.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+candle-core = { workspace = true, features = ["metal"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+wgpu.workspace = true
+pollster.workspace = true
+bytemuck.workspace = true

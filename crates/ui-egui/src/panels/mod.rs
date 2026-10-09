@@ -8,13 +8,16 @@ pub mod denoise;
 pub mod detail;
 pub mod dialogs;
 pub mod edit;
+pub mod faces;
 pub mod filterbar;
 pub mod grid;
+pub mod keymap;
 pub mod left;
 pub mod library_problem;
 pub mod masking;
 pub mod notices;
 pub mod people;
+pub mod person;
 pub mod presets;
 pub mod profiles;
 pub mod right;
@@ -23,6 +26,7 @@ pub mod second;
 pub mod settings;
 pub mod strip;
 pub mod topbar;
+pub mod unnamed;
 
 use egui::{Align2, Rect, pos2, vec2};
 
@@ -64,7 +68,7 @@ pub fn resizable_side(
 /// The HUD toast at the bottom centre of the canvas.
 pub fn toast(app: &mut LightcraftApp, ctx: &egui::Context) {
     let now = ctx.input(|i| i.time);
-    let Some((text, until)) = app.ui.toast.clone() else { return };
+    let Some((text, until, label)) = app.ui.toast.clone() else { return };
     if now > until {
         app.ui.toast = None;
         return;
@@ -75,11 +79,13 @@ pub fn toast(app: &mut LightcraftApp, ctx: &egui::Context) {
     let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("toast")));
     // long messages (a save warning, the web build's notices) wrap within the canvas
     let wrap = (canvas.width() - 80.0).clamp(200.0, 720.0);
-    let galley = painter.layout(text, t.font(14.0), t.text.gamma_multiply(fade), wrap);
+    let (background, foreground) = label.map(crate::theme::label_toast_colors).unwrap_or((egui::Color32::from_black_alpha(200), t.text));
+    let foreground = foreground.gamma_multiply(fade);
+    let galley = painter.layout(text, t.font(14.0), foreground, wrap);
     let size = vec2(galley.size().x + 40.0, (galley.size().y + 22.0).max(40.0));
     let r = Rect::from_center_size(pos2(canvas.center().x, canvas.bottom() - 60.0), size);
-    painter.rect_filled(r, 6.0, egui::Color32::from_black_alpha((200.0 * fade) as u8));
-    painter.galley(r.center() - galley.size() / 2.0, galley, t.text);
+    painter.rect_filled(r, 6.0, background.gamma_multiply(fade));
+    painter.galley(r.center() - galley.size() / 2.0, galley, foreground);
     ctx.request_repaint_after(std::time::Duration::from_millis(30));
 }
 
@@ -90,3 +96,5 @@ pub fn empty_message(ui: &egui::Ui, rect: Rect, title: &str, body: &str) {
     p.text(rect.center() - vec2(0.0, 12.0), Align2::CENTER_CENTER, crate::i18n::tr(title), t.semibold(18.0), t.text_label);
     p.text(rect.center() + vec2(0.0, 14.0), Align2::CENTER_CENTER, crate::i18n::tr(body), t.font(13.0), t.text_dim);
 }
+
+pub mod nafnet;

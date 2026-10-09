@@ -53,7 +53,11 @@ their runtime dependencies.
 
 Release builds fetch the pinned [`storytold/craft-fonts`](https://github.com/storytold/craft-fonts)
 revision and require it (`CRAFT_FONTS_REQUIRED=1`). Keep that pin deliberate when updating the
-workflow.
+workflow, and bump it (in `release.yml`, five jobs, and `freebsd.yml`) whenever craft-fonts adds a face a
+shipped language needs. This fork excludes Adobe-contributed Noto Sans CJK from embedding and web
+packaging under its asset policy. Chinese glyph coverage remains incomplete. Validate the allowed
+faces in `fonts/manifest.txt` and run `CRAFT_FONTS_DIR=../craft-fonts cargo test -p lightcraft-ui-egui i18n`.
+`CRAFT_FONTS_REQUIRED=1` requires BIZ UDPGothic Regular for native/web release builds.
 
 ## Signing credentials
 

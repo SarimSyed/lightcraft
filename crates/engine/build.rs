@@ -5,7 +5,7 @@
 //!
 //! wasm32 (the web build) embeds only the UI font, BIZ UDPGothic Regular (~4.5 MB), to keep the
 //! `.wasm` within the web size budget (Cloudflare serves at most 25 MiB per file); the export
-//! watermark falls back to it there. Native builds embed every font.
+//! watermark falls back to it there. Native builds embed the permitted fonts, excluding Adobe-contributed Noto Sans CJK.
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -69,6 +69,10 @@ fn craft_fonts(dir: &Path) -> Result<String, String> {
         let [family, style, file, scripts, ..] = f.as_slice() else {
             return Err(format!("malformed manifest line: {line}"));
         };
+        // The fork excludes Adobe assets, including their open-licensed font contributions.
+        if family.starts_with("Noto Sans CJK") {
+            continue;
+        }
         if wasm && (*family, *style) != ("BIZ UDPGothic", "Regular") {
             continue;
         }

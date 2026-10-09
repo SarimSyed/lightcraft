@@ -368,3 +368,33 @@ fn repeated_preview_meets_explicit_latency_budget_and_rejects_changed_weights() 
     drop(s);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn an_amount_without_a_selected_backend_does_not_enable_sensor_denoise() {
+    let mut s = Session::with_demo();
+    let id = s.active().unwrap();
+    s.execute("develop.set", &json!({"control":"enhance.denoise","value":75})).unwrap();
+    assert_eq!(s.develop_of(id).unwrap().denoise_amount(), 0.0, "legacy fork amounts without an applied model must stay inactive");
+}
+
+#[test]
+fn rgb_selection_excludes_sensor_denoise_and_the_detail_eye_bypasses_both() {
+    let mut s = Session::with_demo();
+    s.enhancer.model_dir = std::env::temp_dir().join(format!("lc-backend-selection-{}", std::process::id()));
+    let id = s.active().unwrap();
+    let baseline = s.render_now(id, 64, 64).unwrap().image;
+    let mut d = (*s.develop_of(id).unwrap()).clone();
+    d.enhance.model = Some(lightcraft_develop::DenoiseModel {
+        id: "nafnet-sidd-width32".into(),
+        checkpoint: "c6ae62717e6a8388e376302a592ada0d84333836fef32c25c25a130d72d6159a".into(),
+        processing_revision: "rec2020-correction-v1-tiles256-overlap64-global-pool".into(),
+    });
+    d.enhance.denoise = 50.0;
+    d.enhance.denoise_on = Some(true);
+    assert_eq!(d.denoise_amount(), 0.0, "a saved RGB selection never enters the sensor backend");
+    s.set_develop(id, d.clone(), "Restore RGB edit").unwrap();
+    assert!(s.render_now(id, 64, 64).is_err(), "missing RGB result/weights is actionable");
+    s.execute("develop.sectionEnabled", &json!({"section":"detail","enabled":false})).unwrap();
+    assert_eq!(s.render_now(id, 64, 64).unwrap().image, baseline, "the Detail eye bypasses enhancement without trying to regenerate a result");
+    assert_eq!(s.develop_of(id).unwrap().enhance.model, d.enhance.model, "bypass retains the saved selection");
+}
