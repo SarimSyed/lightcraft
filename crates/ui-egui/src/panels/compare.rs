@@ -183,6 +183,9 @@ fn photo_tile(app: &mut LightcraftApp, ui: &mut egui::Ui, id: PhotoId, slot: Slo
     let aspect = frame.aspect() as f32;
     let native = [photo.width.max(1) as usize, photo.height.max(1) as usize];
     let img = super::detail::fit_rect(img_area, aspect, zoom, native, ppp, app.ui.pan);
+    if app.ui.view != ViewMode::Survey {
+        crate::navigation::image_wheel(app, ui.ctx(), img_area, img, id);
+    }
     let want = (img.width().max(img.height()).min(img_area.width().max(img_area.height()) * 4.0) * ppp).min(2560.0) as usize;
     let (rw, rh) = if aspect >= 1.0 { (want, (want as f32 / aspect) as usize) } else { ((want as f32 * aspect) as usize, want) };
     if let Some(job) = app.session.render_job(id, rw.max(8), rh.max(8), false, true) {
@@ -251,11 +254,9 @@ fn slot_index(s: Slot) -> u8 {
 }
 
 /// Drag-to-pan when zoomed in (shared by both compare panes: zoom and pan are synced).
-fn pan(app: &mut LightcraftApp, resp: &egui::Response, img: Rect) {
-    if app.ui.zoom != Zoom::Fit && resp.dragged() {
-        let d = resp.drag_delta();
-        let (px, py) = app.ui.pan;
-        app.ui.pan = ((px - d.x / img.width().max(1.0)).clamp(0.0, 1.0), (py - d.y / img.height().max(1.0)).clamp(0.0, 1.0));
+fn pan(app: &mut LightcraftApp, ui: &egui::Ui, resp: &egui::Response, img: Rect) {
+    if app.ui.zoom != Zoom::Fit {
+        crate::navigation::pan(app, ui.ctx(), resp, img);
     }
 }
 
@@ -278,7 +279,7 @@ pub fn show_compare(app: &mut LightcraftApp, ui: &mut egui::Ui) {
         if i == 1 {
             app.image_rect = Some(img);
         }
-        pan(app, &resp, img);
+        pan(app, ui, &resp, img);
         if resp.clicked() {
             select_pair(app, sel, cand, id);
         }
@@ -379,7 +380,7 @@ pub fn show_reference(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let (_, lresp) = photo_tile(app, ui, r, Slot::Compare(0), left, "Reference", zoom);
     let (img, resp) = photo_tile(app, ui, active, Slot::Compare(1), right, "Active", zoom);
     app.image_rect = Some(img);
-    pan(app, &resp, img);
+    pan(app, ui, &resp, img);
     lresp.context_menu(|ui| {
         if ui.button(crate::i18n::tr("Clear Reference")).clicked() {
             app.ui.reference = None;

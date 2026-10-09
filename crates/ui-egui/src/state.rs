@@ -133,6 +133,7 @@ impl InfoOverlay {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct AppSettings {
+    pub navigation: NavigationSettings,
     /// Library opened at launch when no `--library` is given (empty = the default location).
     pub library_path: String,
     pub startup_view: StartupView,
@@ -157,6 +158,7 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         AppSettings {
+            navigation: NavigationSettings::default(),
             library_path: String::new(),
             startup_view: StartupView::Last,
             confirm_delete: false,
@@ -168,6 +170,89 @@ impl Default for AppSettings {
             film_badges: true,
             grid_badges: GridBadges::Auto,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WheelModifier {
+    None,
+    #[default]
+    Ctrl,
+    Alt,
+    Shift,
+    Command,
+    Disabled,
+}
+impl WheelModifier {
+    pub const OPTIONS: &'static [(Self, &'static str)] = &[
+        (Self::Ctrl, "Ctrl"),
+        (Self::Alt, "Alt"),
+        (Self::Shift, "Shift"),
+        (Self::Command, "Cmd"),
+        (Self::None, "None"),
+        (Self::Disabled, "Disabled"),
+    ];
+    pub fn label(self) -> &'static str {
+        Self::OPTIONS.iter().find(|(v, _)| *v == self).map_or("Ctrl", |(_, l)| *l)
+    }
+    pub fn matches(self, m: egui::Modifiers) -> bool {
+        if m.alt != (self == Self::Alt) || m.shift != (self == Self::Shift) {
+            return false;
+        }
+        match self {
+            Self::None => !m.ctrl && !m.command,
+            Self::Ctrl => m.ctrl && (!m.mac_cmd),
+            Self::Command => m.command && (!m.ctrl || !cfg!(target_os = "macos")),
+            Self::Alt | Self::Shift => !m.ctrl && !m.command,
+            Self::Disabled => false,
+        }
+    }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PanButton {
+    #[default]
+    Primary,
+    Middle,
+}
+impl PanButton {
+    pub fn button(self) -> egui::PointerButton {
+        match self {
+            Self::Primary => egui::PointerButton::Primary,
+            Self::Middle => egui::PointerButton::Middle,
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Primary => "Left drag",
+            Self::Middle => "Middle drag",
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct NavigationSettings {
+    pub keys: std::collections::BTreeMap<String, String>,
+    pub wheel_modifier: WheelModifier,
+    pub pan_button: PanButton,
+    pub pan_modifier: WheelModifier,
+}
+impl Default for NavigationSettings {
+    fn default() -> Self {
+        Self { keys: Default::default(), wheel_modifier: WheelModifier::Ctrl, pan_button: PanButton::Primary, pan_modifier: WheelModifier::Disabled }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DenoiseView {
+    pub center: [f32; 2],
+    pub zoom: u32,
+}
+impl Default for DenoiseView {
+    fn default() -> Self {
+        Self { center: [0.5, 0.5], zoom: 100 }
     }
 }
 
@@ -202,6 +287,8 @@ pub const MIN_PHOTO_WIDTH: f32 = 360.0;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
+    #[serde(skip)]
+    pub denoise_due: Option<std::time::Instant>,
     #[serde(default = "crate::i18n::default_language")]
     pub language: crate::i18n::Locale,
     /// The Build Previews run last announced (its identity, finished?).
@@ -516,7 +603,7 @@ pub enum Dialog {
     Merge {
         opts: crate::merge::MergeDialog,
     },
-    /// Settings (preferences): `tab` = general | import | performance | interface.
+    /// Settings (preferences): `tab` = general | import | performance | interface | navigation.
     Settings {
         tab: String,
     },
@@ -532,6 +619,8 @@ pub enum Dialog {
     Denoise {
         photo: u64,
         amount: f64,
+        #[serde(default)]
+        view: DenoiseView,
     },
     /// Confirm moving photos to Recently Deleted.
     ConfirmDelete {
@@ -539,11 +628,13 @@ pub enum Dialog {
     },
     About,
     Shortcuts,
+    NavigationHelp,
 }
 
 impl Default for UiState {
     fn default() -> Self {
         UiState {
+            denoise_due: None,
             language: crate::i18n::default_language(),
             preview_build_seen: None,
             unsaved_seen: false,

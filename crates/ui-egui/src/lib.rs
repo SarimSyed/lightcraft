@@ -17,6 +17,7 @@ pub mod links;
 pub mod menubar;
 pub mod menus;
 pub mod merge;
+pub mod navigation;
 pub mod panels;
 pub mod render;
 pub mod shortcuts;

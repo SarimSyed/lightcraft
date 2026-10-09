@@ -230,6 +230,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "---",
             "app.whatsNew",
             "app.shortcuts",
+            "app.navigationHelp",
             "app.systemInfo",
             "---",
             "app.about",

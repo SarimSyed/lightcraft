@@ -7,10 +7,39 @@ this is **RGB-stage AI denoise**, not Lightroom sensor-level RAW-denoise parity.
 Unsupported RAW variants that only expose an embedded JPEG are rejected.
 
 Detail → AI Denoise… and Photo → AI Denoise… open a focused 100% crop preview.
+The crop navigator, drag and arrow keys inspect other source regions; the
+configured wheel gesture (Ctrl+scroll by default) zooms 50–800%. See
+[navigation help and settings](navigation.md). Apply always processes the whole image.
 Hold Before or Space to compare. Amount (default 50) blends the same correction
 without re-running inference or changing history. Apply processes the full image
 and saves one undoable edit after its result has been written successfully.
 Cancel, failures and stale completions do not change the saved edit.
+
+## Photographic quality assessment (2026-10-09)
+
+Fresh physical Vulkan runs on the user's two Nikon D7100 ISO 6400 NEFs
+(`_SAR0625.NEF`, `_SAR0626.NEF`, 4020×6036) evaluated the same 512×320 central
+source crops at Amount 50 and 100. Both completed with finite output and no CPU
+fallback. At 100, visual inspection shows substantial removal of colour speckles
+but softer bark and foliage texture; 50 retains more texture and residual noise.
+These private review crops remain outside the repository. There is no paired
+clean ground truth or matching Lightroom output, so this establishes neither a
+quality score nor Lightroom parity.
+
+The authors' width-32 checkpoint targets SIDD RGB denoising. Adobe describes its
+RAW denoiser as jointly denoising and demosaicing sensor data, with extensive RAW
+training and noise simulation ([author model/configuration](https://github.com/megvii-research/NAFNet),
+[Adobe technical explanation](https://blog.adobe.com/en/publish/2023/04/18/denoise-demystified)).
+That is a material difference in input and training. Increasing Amount is a blend
+of this model's fixed prediction, not a change to its learned noise model. The
+recent GPU optimizations preserve that prediction within the tested tolerances;
+they do not improve its photographic detail/noise tradeoff. A future sensor-stage
+model requires a separate typed adapter, suitable weights, and real RAW quality
+validation. It must not receive developed RGB through the current RGB interface.
+
+The main Detail preview's configured resolution limit can also soften apparent
+detail at high zoom. The navigable AI dialog at 100% evaluates source-resolution
+pixels and is the appropriate in-app view for judging this model's result.
 
 ## Model and delivery status
 

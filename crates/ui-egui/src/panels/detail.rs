@@ -194,6 +194,7 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
     let target_rect = fit_rect(main_area, aspect, app.ui.zoom, native, ppp, app.ui.pan);
     let img_rect = animated_rect(ui.ctx(), &mut app.ui.zoom_anim, target_rect);
     app.image_rect = Some(img_rect);
+    crate::navigation::image_wheel(app, ui.ctx(), main_area, img_rect, id);
     // request renders: the loupe at display resolution (drafts during drags)
     let interacting = app.session.interaction.is_some();
     let scale = if interacting { 0.6 } else { 1.0 };
@@ -362,12 +363,17 @@ pub fn show(app: &mut LightcraftApp, ui: &mut egui::Ui) {
             p.line_segment([pos2(img_rect.left(), fy), pos2(img_rect.right(), fy)], stroke);
         }
     }
-    match right {
-        RightPanel::Crop => crop_overlay(app, ui, &resp, &map, &frame, &d, id),
-        RightPanel::Masking => mask_overlay(app, ui, &resp, &map, &d),
-        RightPanel::Remove => remove_overlay(app, ui, &resp, &map, &d),
-        RightPanel::RedEye => eye_overlay(app, ui, &resp, &map, &d),
-        _ => general_interaction(app, ui, &resp, &map, img_rect, canvas, native, aspect),
+    let tool = right.is_edit_tool() && (right != RightPanel::Edit || !app.ui.tool.is_empty());
+    if crate::navigation::pan_requested(ui.ctx(), &resp, &app.ui.settings.navigation, tool) {
+        crate::navigation::pan(app, ui.ctx(), &resp, img_rect);
+    } else {
+        match right {
+            RightPanel::Crop => crop_overlay(app, ui, &resp, &map, &frame, &d, id),
+            RightPanel::Masking => mask_overlay(app, ui, &resp, &map, &d),
+            RightPanel::Remove => remove_overlay(app, ui, &resp, &map, &d),
+            RightPanel::RedEye => eye_overlay(app, ui, &resp, &map, &d),
+            _ => general_interaction(app, ui, &resp, &map, img_rect, canvas, native, aspect),
+        }
     }
     // drawn and hit-tested above the loupe and its tools: clicks on it pan
     navigator(app, ui, canvas, img_rect, id);
@@ -811,11 +817,7 @@ fn general_interaction(
         if resp.dragged() || resp.hovered() {
             ui.ctx().set_cursor_icon(if resp.dragged() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
         }
-        if resp.dragged() {
-            let dlt = resp.drag_delta();
-            app.ui.pan.0 = (app.ui.pan.0 - dlt.x / img.width()).clamp(0.0, 1.0);
-            app.ui.pan.1 = (app.ui.pan.1 - dlt.y / img.height()).clamp(0.0, 1.0);
-        }
+        crate::navigation::pan(app, ui.ctx(), resp, img);
     }
     let _ = (native, aspect);
 }

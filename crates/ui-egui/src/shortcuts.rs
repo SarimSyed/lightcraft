@@ -79,6 +79,10 @@ fn matches(i: &egui::InputState, m: Modifiers, k: Key) -> bool {
 }
 
 pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context) {
+    // Crop navigation and Before belong to this focused dialog, not to photo selection.
+    if matches!(app.ui.dialog, Some(crate::state::Dialog::Denoise { .. })) {
+        return;
+    }
     // don't steal keys from text fields
     if ctx.egui_wants_keyboard_input() {
         return;
@@ -90,6 +94,7 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context) {
     ctx.input(|i| {
         let mut ui_keys = Vec::new();
         for (id, _, sc, _) in crate::menus::ui_commands() {
+            let sc = crate::navigation::shortcut(app, id, *sc);
             if let Some((m, k)) = sc.and_then(parse) {
                 ui_keys.push((m, k));
                 if !native(sc.unwrap_or_default()) && matches(i, m, k) {
@@ -108,6 +113,9 @@ pub fn handle(app: &mut LightcraftApp, ctx: &egui::Context) {
             }
         }
         for (sc, id, params) in ALIASES {
+            if app.ui.settings.navigation.keys.contains_key(*id) {
+                continue;
+            }
             if let Some((m, k)) = parse(sc).filter(|_| !native(sc))
                 && matches(i, m, k)
             {

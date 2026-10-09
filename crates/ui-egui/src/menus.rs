@@ -69,6 +69,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.clickZoom", "Click Zoom Ratio", None, ""),
     ("view.zoomIn", "Zoom In", Some("Cmd+="), "View"),
     ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "View"),
+    ("view.zoomAt", "Zoom at Pointer", None, ""),
+    ("view.pan", "Pan Photo", None, ""),
     ("view.clipping", "Show Clipping", Some("J"), "View"),
     // in grids S expands/collapses stacks (the engine command it shadows)
     ("view.softProof", "Soft Proofing", Some("S"), "View"),
@@ -137,6 +139,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("photo.editInExternal", "Edit in External Editor", Some("Cmd+Shift+E"), "Photo"),
     ("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge"),
     ("dialog.denoise", "AI Denoise…", None, "Photo"),
+    ("dialog.denoise.navigate", "Navigate Denoise Preview", None, ""),
     ("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge"),
     ("dialog.mergeHdrPanorama", "HDR Panorama…", None, "Photo>Photo Merge"),
     ("merge.hdrLast", "HDR with Last Settings", Some("Ctrl+Shift+H"), "Photo>Photo Merge"),
@@ -169,6 +172,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.github", "LightCraft on GitHub", None, "Help"),
     ("app.artcraft", "ArtCraft Website", None, "Help"),
     ("app.shortcuts", "Keyboard Shortcuts", Some("Cmd+/"), "Help"),
+    ("app.navigationHelp", "Photo Navigation", None, "Help"),
+    ("app.navigationBinding", "Set Navigation Shortcut", None, ""),
     ("app.export", "Export Now", None, ""),
     ("app.showInFinder", "Show in Finder", Some("Cmd+R"), "Photo"),
     ("dialog.rename", "Rename Photos…", Some("F2"), "Photo"),
@@ -418,7 +423,7 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
         "app.settings" => {
             let tab = p.get("tab").and_then(Value::as_str).unwrap_or("general");
             if !crate::panels::settings::TABS.iter().any(|(id, _)| *id == tab) {
-                return Some(Err(format!("unknown settings tab `{tab}` (general|import|performance|interface)")));
+                return Some(Err(format!("unknown settings tab `{tab}` (general|import|performance|interface|navigation)")));
             }
             app.ui.dialog = Some(Dialog::Settings { tab: tab.into() });
             Ok(Value::Null)
@@ -459,6 +464,19 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             app.ui.before_after = if app.ui.before_after == BeforeAfter::Original { BeforeAfter::Off } else { BeforeAfter::Original };
             Ok(Value::Null)
         }
+        "dialog.denoise.navigate" => crate::panels::denoise::navigate(app, p),
+        "app.navigationBinding" => crate::navigation::binding(app, p),
+        "view.zoomAt" => crate::navigation::zoom_at(app, p),
+        "view.pan" => {
+            let delta = |key| p.get(key).and_then(Value::as_f64).filter(|n| n.is_finite() && n.abs() <= 1.0).map(|n| n as f32);
+            match (delta("dx"), delta("dy")) {
+                (Some(dx), Some(dy)) => {
+                    app.ui.pan = ((app.ui.pan.0 + dx).clamp(0.0, 1.0), (app.ui.pan.1 + dy).clamp(0.0, 1.0));
+                    Ok(json!({"pan":app.ui.pan}))
+                }
+                _ => Err("view.pan: finite dx/dy in -1..1 required".into()),
+            }
+        }
         "view.zoomFit" => {
             app.ui.zoom = Zoom::Fit;
             Ok(Value::Null)
@@ -485,13 +503,13 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             Ok(json!({"ratio": app.ui.click_zoom / 100}))
         }
         "view.zoomIn" | "view.zoomOut" => {
-            let steps = [25u32, 50, 100, 200, 400, 800];
+            let steps = [6u32, 12, 25, 50, 100, 200, 400, 800, 1600];
             let cur = match app.ui.zoom {
                 Zoom::Percent(p) => p,
                 _ => 25,
             };
             let next = if id == "view.zoomIn" {
-                steps.iter().find(|s| **s > cur).copied().unwrap_or(800)
+                steps.iter().find(|s| **s > cur).copied().unwrap_or(1600)
             } else {
                 steps.iter().rev().find(|s| **s < cur).copied().unwrap_or(0)
             };
@@ -948,6 +966,10 @@ pub fn run_ui_command(app: &mut LightcraftApp, id: &str, p: &Value) -> Option<Re
             app.ui.dialog = Some(Dialog::Shortcuts);
             Ok(Value::Null)
         }
+        "app.navigationHelp" => {
+            app.ui.dialog = Some(Dialog::NavigationHelp);
+            Ok(Value::Null)
+        }
         "library.browse" if !cfg!(target_arch = "wasm32") => {
             // listed and read in the background (see `import::browse`)
             let path = p.get("path").and_then(Value::as_str)?;
@@ -1309,7 +1331,7 @@ pub fn menu_entries(app: &LightcraftApp) -> Vec<MenuEntry> {
                 label.to_string()
             },
             menu: m.split('>').map(str::to_string).collect(),
-            shortcut: sc.map(str::to_string),
+            shortcut: crate::navigation::shortcut(app, id, *sc).map(str::to_string),
             enabled: ui_enabled(app, id),
         })
         .collect();

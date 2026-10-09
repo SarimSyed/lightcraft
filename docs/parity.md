@@ -42,15 +42,15 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | S. Export (EXP) | 15 | 1 | 2 | 0 | 7/7 (100%) | 7/7 (100%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
 | U. Map & location (MAP) | 0 | 1 | 1 | 0 | — | 0/1 (0%) |
-| V. Preferences (PREF) | 5 | 0 | 3 | 3 | 1/1 (100%) | 4/4 (100%) |
+| V. Preferences (PREF) | 6 | 0 | 3 | 2 | 1/1 (100%) | 4/4 (100%) |
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 17 | 4 | 1 | 1 | 8/8 (100%) | 6/8 (75%) |
 | Y. Menus | 81 | 1 | 3 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 74 | 3 | 3 | 1 | 49/52 (94%) | 22/23 (96%) |
 | Lightroom Classic extras | 31 | 10 | 39 | 9 | — | 21/22 (95%) |
-| **Total** | 389 | 38 | 82 | 37 | 194/200 (97%) | 139/149 (93%) |
+| **Total** | 390 | 38 | 82 | 36 | 194/200 (97%) | 139/149 (93%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **80.2%** of 509 in-scope rows — P0 98.5% of 200 · P1 95.6% of 149 · P2 42.8% of 160.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **80.2%** of 510 in-scope rows — P0 98.5% of 200 · P1 95.6% of 149 · P2 42.8% of 160.
 <!-- /parity:summary -->
 
 ## Top gaps
@@ -72,7 +72,7 @@ Take the first one nobody is working on.
    Object and Describe masks run SAM 3 in pure Rust (`crates/segment`); the weights (SAM License) are never bundled:
    the app offers a consented, verified download, but **LightCraft's CDN mirrors are not configured yet** (the
    built-in list is empty, so today users need their own mirror or a manual install). Subject / Sky / People could
-   use the same model with fixed prompts. NAFNet SIDD width-32 now supports native RGB-stage denoise and an offline Enhance workflow; public delivery awaits checkpoint redistribution permission and a verified release (docs/denoise.md). Super resolution remains open.
+   use the same model with fixed prompts. NAFNet SIDD width-32 now supports native RGB-stage denoise and an offline Enhance workflow with navigable crops; high-ISO texture/noise quality remains below an established RAW-denoise parity gate; public delivery awaits checkpoint redistribution permission and a verified release (docs/denoise.md). Super resolution remains open.
 7. **HDR** (Q. HDR, LR-EXP-HDR), **video** (R. Video), **Classic output modules** (Map view, Book, Slideshow module,
    Print, publish): large, well understood, lower priority than 1–5.
 
@@ -172,7 +172,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-VIEW-EDIT | Edit view | P0 | ✅ | `cmd:panel.edit` | |
 | LR-VIEW-FULLSCREEN | Full-screen preview | P1 | ✅ | `cmd:view.fullScreenPreview`, `cmd:view.enterFullScreen` | photo on black, arrows step, Esc exits; ⇧⌘F window full screen |
 | LR-VIEW-FILMSTRIP | Filmstrip | P0 | ✅ | `cmd:view.filmstrip`, `crates/ui-egui/src/panels/detail.rs` | the photo context menu on right-click; the mouse wheel scrolls it sideways; it follows the active photo only when that changes (centred if off screen), so a scrolled strip stays put |
-| LR-VIEW-ZOOM | Zoom & pan | P0 | ✅ | `cmd:view.zoomFit`, `cmd:view.zoom100`, `cmd:view.zoomIn`, `cmd:view.zoomOut`, `cmd:view.zoomToggle`, `cmd:view.clickZoom` | steps 25–800 % (not 6–1600 %); Fill only in the bottom bar; a click on the photo (and Z / Space) eases to the click-zoom ratio (1:1 default, 2:1, 3:1, 4:1, 8:1 in the bottom bar) |
+| LR-VIEW-ZOOM | Zoom & pan | P0 | ✅ | `cmd:view.zoomFit`, `cmd:view.zoom100`, `cmd:view.zoomIn`, `cmd:view.zoomOut`, `cmd:view.zoomToggle`, `cmd:view.clickZoom` | 6–1600 %; Ctrl+scroll at the pointer, configurable gestures/zoom keys and help (`docs/navigation.md`); Fill only in the bottom bar; a click on the photo (and Z / Space) eases to the click-zoom ratio (1:1 default, 2:1, 3:1, 4:1, 8:1 in the bottom bar) |
 | LR-VIEW-NAVIGATOR | Navigator mini map | P1 | ✅ | `cmd:view.navigator`, `crates/ui-egui/src/panels/detail.rs` | shown while zoomed (bottom right); click/drag pans |
 | LR-VIEW-BEFOREAFTER | Before / after | P0 | ✅ | `cmd:view.showOriginal`, `cmd:view.beforeAfter`, `cmd:view.beforeAfterSplit`, `cmd:view.beforeAfterTopBottom`, `cmd:view.beforeAfterSplitTopBottom`, `cmd:beforeAfter.setBefore`, `cmd:beforeAfter.copyAfterToBefore`, `cmd:beforeAfter.copyBeforeToAfter`, `cmd:beforeAfter.swap`, `cmd:beforeAfter.resetBefore` | all four layouts; before = the import state (defaults + import preset) or a chosen history step / version / the current settings; copy and swap (View → Before/After Settings, History row menu). The chosen before lasts for the session |
 | LR-VIEW-COMPARE | Compare two photos | P1 | ✅ | `cmd:view.compare`, `cmd:compare.swap`, `cmd:compare.makeSelect`, `crates/ui-egui/src/panels/compare.rs`, `crates/ui-egui/src/headless.rs` | select / candidate, synced zoom + pan; thumbnail clicks and arrows replace the candidate while keeping the select; clicking either pane activates it; pointer and keyboard regression coverage; no zoom-link toggle |
@@ -249,7 +249,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EDIT-DETAIL-SHARPEN | Sharpening | P0 | ✅ | `ctl:detail.sharpenAmount`, `ctl:detail.sharpenRadius`, `ctl:detail.sharpenDetail`, `ctl:detail.sharpenMasking` | no Alt-drag mask preview |
 | LR-EDIT-DETAIL-NR | Luminance noise reduction | P0 | ✅ | `ctl:detail.nrLuminance`, `ctl:detail.nrDetail`, `ctl:detail.nrContrast` | Contrast preserves local structure; public-render noise/brightness and cache regressions cover the controls. Dependent sliders are inert at NR 0; localized help and drag/reset undo are verified. Lightroom fidelity remains unmeasured |
 | LR-EDIT-DETAIL-CNR | Colour noise reduction | P0 | ✅ | `ctl:detail.nrColor`, `ctl:detail.nrColorDetail`, `ctl:detail.nrColorSmoothness` | Independent guided chromaticity filters preserve colour boundaries and luminance; procedural quality and CPU/GPU regressions. Dependent sliders preserve their values at NR 0; localized help. See `docs/noise-reduction.md`; Lightroom fidelity remains unmeasured |
-| LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | 🟡 | `cmd:enhance.denoise.apply`, `ctl:enhance.denoise`, `crates/denoise/src/lib.rs`, `docs/denoise.md` | NAFNet SIDD width-32, native RGB/demosaiced RAW; optimized pure-Rust CPU and Linux Vulkan inference (RX 9060 XT verified; fused/paired inference and resident model; matched 24 MP Apply 12.6 s), non-destructive float cache and one-step undo. Offline installation works; public release/redistribution permission and photographic RAW validation remain gates. Other GPU hardware coverage and sensor-level RAW parity remain open |
+| LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | 🟡 | `cmd:enhance.denoise.apply`, `ctl:enhance.denoise`, `crates/denoise/src/lib.rs`, `docs/denoise.md` | NAFNet SIDD width-32, native RGB/demosaiced RAW; optimized pure-Rust CPU and Linux Vulkan inference (RX 9060 XT verified; fused/paired inference and resident model; matched 24 MP Apply 12.6 s), non-destructive float cache and one-step undo; navigable source-crop preview. ISO 6400 D7100 inspection shows texture softening at high amounts. Offline installation works; public release/redistribution permission and photographic RAW validation remain gates. Other GPU hardware coverage and sensor-level RAW parity remain open |
 | LR-EDIT-DETAIL-RAWDETAILS | Improved demosaic toggle | P2 | ⬜ | | |
 | LR-EDIT-DETAIL-SUPERRES | Super resolution | P2 | ⬜ | | |
 | LR-EDIT-DETAIL-AISHARPEN | AI sharpen | OOS | 🚫 | | |
@@ -470,7 +470,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-PREF-PERFORMANCE | GPU / performance | P1 | ✅ | `cmd:app.gpu`, `cmd:app.memoryBudget`, `cmd:app.settings` | GPU on/off, preview size (1600–5120 px), memory budget, thumbnail cache size in Settings |
 | LR-PREF-PEOPLE | Face recognition | P2 | ⬜ | | |
 | LR-PREF-WATERMARK | Watermark settings | P1 | ✅ | `cmd:export.savePreset`, `crates/ui-egui/src/panels/dialogs.rs` | set in the Export dialog; kept with Export with Previous and in saved export presets |
-| LR-PREF-SHORTCUTS | Shortcut customisation | — | 🚫 | | not customisable in the reference app either; a keymap editor would be an extra |
+| LR-PREF-SHORTCUTS | Shortcut customisation | — | ✅ | `cmd:app.navigationBinding`, `cmd:app.navigationHelp`, `docs/navigation.md` | Extra beyond the reference: Settings → Navigation rebinds the five zoom commands and wheel/pan gestures; conflicts rejected, bindings saved and shown in menus/help. Other command bindings remain fixed |
 | LR-PREF-TECHPREVIEW | Early-access toggles | P2 | ⬜ | | |
 | LR-PREF-NOTIFICATIONS | Notifications | OOS | 🚫 | | |
 | LR-PREF-DEVICE | Device settings | P2 | ⬜ | | |

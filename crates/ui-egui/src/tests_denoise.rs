@@ -22,6 +22,73 @@ fn first_use_denoise_dialog_shows_installation_and_escape_preserves_the_edit() {
 
 #[cfg(feature = "reference-validation")]
 #[test]
+fn denoise_preview_can_navigate_the_source_without_committing() {
+    let dir = std::env::temp_dir().join(format!("lc-denoise-navigation-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("source.tif");
+    let pixels: Vec<f32> = (0..640 * 480).flat_map(|i| [0.2 + (i % 29) as f32 * 0.002, 0.3, 0.4]).collect();
+    std::fs::write(
+        &source,
+        lightcraft_codecs::encode_tiff(
+            &lightcraft_codecs::EncodeImage::new(640, 480, 3, lightcraft_codecs::Samples::F32(&pixels)),
+            lightcraft_codecs::TiffCompression::Deflate,
+            &Default::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut s = lightcraft_engine::Session::new().with_fs();
+    s.enhancer.model_dir = std::env::var("LIGHTCRAFT_NAFNET_REFERENCE").expect("required model absent").into();
+    s.execute("library.import", &json!({"paths":[source]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    s.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+    let original = s.develop_of(id).unwrap();
+    let mut h = Headless::new(LightcraftApp::new(s, Services::default()), [1200.0, 900.0], 1.0);
+    let timeout = Duration::from_secs(60);
+    assert_eq!(h.request("engine.execute", json!({"command":"dialog.denoise"}), timeout)["ok"], true);
+    assert!(h.step_until(timeout, |h| h.app.session.enhancer.preview.is_some()));
+    h.step();
+    let region = h.app.session.enhancer.preview.as_ref().unwrap().region;
+    let reply = h.request("ui.clickWidget", json!({"id":"denoise:navigator","fx":0.95,"fy":0.9}), timeout);
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert!(
+        h.step_until(timeout, |h| h.app.session.enhancer.preview.as_ref().is_some_and(|p| p.region != region)),
+        "{}",
+        json!(h.app.session.enhancer.status())
+    );
+    let moved = h.app.session.enhancer.preview.as_ref().unwrap().region;
+    assert!(moved.x > region.x && moved.y > region.y);
+    h.settle(timeout);
+    let image_width = h.request("ui.widgets", json!({"filter":"denoise:preview"}), timeout)["result"][0]["rect"][2].as_f64().unwrap();
+    let hovered = h.request("ui.hoverWidget", json!({"id":"denoise:preview"}), timeout);
+    assert_eq!(hovered["ok"], true, "{hovered}");
+    h.request("ui.scroll", json!({"dy":120.0,"ctrl":true}), timeout);
+    h.step();
+    let preparing_width = h.request("ui.widgets", json!({"filter":"denoise:preview"}), timeout)["result"][0]["rect"][2].as_f64().unwrap();
+    assert!(
+        (preparing_width - image_width).abs() < 2.0,
+        "the old preview must not stretch the dialog while zooming: {image_width} → {preparing_width}"
+    );
+    assert!(
+        matches!(h.app.ui.dialog,Some(crate::state::Dialog::Denoise { view,.. }) if view.zoom>100),
+        "wheel {:?} {:?}",
+        h.app.ui.dialog,
+        h.view.ctx.input(|i| i.pointer.hover_pos())
+    );
+    assert!(
+        h.step_until(timeout, |h| h.app.session.enhancer.preview.as_ref().is_some_and(|p| p.region.width < moved.width)),
+        "{:?} {}",
+        h.app.ui.dialog,
+        json!(h.app.session.enhancer.status())
+    );
+    assert_eq!(h.app.session.develop_of(id).unwrap(), original);
+    h.request("ui.dialog.cancel", json!({}), timeout);
+    assert_eq!(h.app.session.develop_of(id).unwrap(), original);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(feature = "reference-validation")]
+#[test]
 fn denoise_amount_preview_and_before_leave_history_untouched_until_apply() {
     use lightcraft_engine::catalog::{Op, Photo, Source};
     let dir = std::env::temp_dir().join(format!("lc-denoise-ui-preview-{}", std::process::id()));

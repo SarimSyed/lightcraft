@@ -119,5 +119,7 @@
   "{month} {year}": "{year}年{month}月",
   "{weekday}, {day}": "{day}日 {weekday}",
   "{weekday}, {day} {month} {year}": "{year}年{month}月{day}日 {weekday}",
-  "Survey · {n} selected": "多图比较 · 已选 {n} 张"
+  "Survey · {n} selected": "多图比较 · 已选 {n} 张",
+  "{} + scroll": "{} + 滚动",
+  "{} + left drag": "{} + 左键拖动"
 }

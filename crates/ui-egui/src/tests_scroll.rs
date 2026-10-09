@@ -47,6 +47,80 @@ fn widget(h: &Headless, id: &str) -> egui::Rect {
 }
 
 #[test]
+fn control_wheel_zooms_the_photo_at_the_pointer_without_editing() {
+    let mut h = demo("detail");
+    h.request("ui.set", json!({"zoom":{"percent":200},"pan":[0.5,0.5]}), T);
+    h.step();
+    let original = h.app.session.develop_of(h.app.session.active().unwrap()).unwrap();
+    let img = h.app.image_rect.unwrap();
+    let q = h.app.canvas_rect.unwrap().center() + egui::vec2(55.0, -35.0);
+    let anchor = (q - img.min) / img.size();
+    h.request("ui.move", json!({"x":q.x,"y":q.y}), T);
+    let ppp = h.view.ctx.pixels_per_point();
+    h.request("ui.scroll", json!({"dy":80.0,"ctrl":true}), T);
+    h.step();
+    assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Percent(p) if p > 200), "Ctrl+wheel zooms the photo");
+    let zoomed = h.app.image_rect.unwrap();
+    assert!((zoomed.min + anchor * zoomed.size()).distance(q) < 1.0, "zoom stays under the pointer");
+    assert_eq!(h.view.ctx.pixels_per_point(), ppp, "photo zoom must not scale the interface");
+    assert_eq!(h.app.session.develop_of(h.app.session.active().unwrap()).unwrap(), original);
+    let before = h.app.ui.zoom;
+    h.request("ui.move", json!({"x":15.0,"y":15.0}), T);
+    h.request("ui.scroll", json!({"dy":80.0,"ctrl":true}), T);
+    h.step();
+    assert_eq!(h.app.ui.zoom, before, "wheel outside the photo does not zoom it");
+}
+
+#[test]
+fn photo_navigation_bindings_can_be_changed_and_saved() {
+    let mut h = demo("detail");
+    let reply = h.request("ui.set", json!({"zoom":{"percent":200},"settings":{"navigation":{"wheelModifier":"alt","panButton":"middle"}}}), T);
+    assert_eq!(reply["ok"], true, "{reply}");
+    h.step();
+    let q = h.app.canvas_rect.unwrap().center();
+    h.request("ui.move", json!({"x":q.x,"y":q.y}), T);
+    h.request("ui.scroll", json!({"dy":80.0,"ctrl":true}), T);
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(200), "old binding is inactive");
+    h.request("ui.scroll", json!({"dy":80.0,"alt":true}), T);
+    assert!(matches!(h.app.ui.zoom, crate::state::Zoom::Percent(p) if p > 200));
+    let start = h.app.ui.pan;
+    h.request("ui.drag", json!({"x":q.x,"y":q.y,"toX":q.x+50.0,"toY":q.y+30.0,"button":"middle"}), T);
+    assert_ne!(h.app.ui.pan, start, "middle drag moves the view");
+    let original = h.app.session.develop_of(h.app.session.active().unwrap()).unwrap();
+    h.request("engine.execute", json!({"command":"panel.crop"}), T);
+    h.request("ui.drag", json!({"x":q.x,"y":q.y,"toX":q.x-45.0,"toY":q.y-30.0,"button":"middle"}), T);
+    assert_eq!(h.app.session.develop_of(h.app.session.active().unwrap()).unwrap(), original, "panning with Crop open must not change the crop");
+    let saved = serde_json::to_value(&h.app.ui).unwrap();
+    let restored: crate::UiState = serde_json::from_value(saved).unwrap();
+    assert_eq!(serde_json::to_value(restored.settings).unwrap()["navigation"]["wheelModifier"], "alt");
+    h.request("engine.execute", json!({"command":"app.settings","params":{"tab":"navigation"}}), T);
+    assert!(h.app.widgets.iter().any(|(id, _)| id == "combo:navigationWheel"));
+    h.request("ui.dialog.cancel", json!({}), T);
+    h.request("engine.execute", json!({"command":"app.navigationHelp"}), T);
+    assert!(h.app.widgets.iter().any(|(id, _)| id == "help:navigation"));
+}
+
+#[test]
+fn zoom_keys_can_be_rebound_without_conflicts_and_help_shows_the_binding() {
+    let mut h = demo("detail");
+    let r = h.request("engine.execute", json!({"command":"app.navigationBinding","params":{"command":"view.zoomIn","shortcut":"Alt+I"}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.request("ui.set", json!({"zoom":{"percent":100}}), T);
+    h.request("ui.key", json!({"key":"=","cmd":true}), T);
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100));
+    h.request("ui.key", json!({"key":"I","alt":true}), T);
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(200));
+    let r = h.request("engine.execute", json!({"command":"app.navigationBinding","params":{"command":"view.zoomOut","shortcut":"D"}}), T);
+    assert_eq!(r["ok"], false, "reserved photo shortcut must be rejected");
+    let menus = h.request("ui.menu.list", json!({}), T);
+    let zoom = menus["result"].as_array().unwrap().iter().find(|v| v["id"] == "view.zoomIn").unwrap();
+    assert_eq!(zoom["shortcut"], "Alt+I");
+    h.request("engine.execute", json!({"command":"app.navigationHelp"}), T);
+    h.request("ui.clickWidget", json!({"id":"help:navigation"}), T);
+    assert!(matches!(h.app.ui.dialog,Some(crate::state::Dialog::Settings { ref tab }) if tab=="navigation"));
+}
+
+#[test]
 fn grid_keeps_the_users_scroll_position() {
     let mut h = demo("photoGrid");
     assert_eq!(grid_y(&h), 0.0);

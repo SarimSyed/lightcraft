@@ -75,6 +75,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     });
     let mut close = false;
     let mut confirm = false;
+    let mut navigation_settings = false;
     let title: String = match &dlg {
         Dialog::TextPrompt { title, .. } => title.as_str(),
         Dialog::NewAlbum { folder: true, .. } => "Create Folder",
@@ -105,6 +106,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
         Dialog::Denoise { .. } => "AI Denoise",
         Dialog::About => "About LightCraft",
         Dialog::Shortcuts => "Keyboard Shortcuts",
+        Dialog::NavigationHelp => "Photo Navigation",
     }
     .to_string();
     let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(16, 12));
@@ -761,12 +763,14 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                     }
                 }
                 Dialog::Shortcuts => {
+                    navigation_settings |= crate::navigation::help(app, ui);
                     egui::ScrollArea::vertical().max_height(420.0).show(ui, |ui| {
                         egui::Grid::new("shortcuts").striped(true).show(ui, |ui| {
                             for (id, label, sc, _) in crate::menus::ui_commands() {
+                                let sc = crate::navigation::shortcut(app,id,*sc);
                                 if let Some(sc) = sc {
                                     ui.label(crate::i18n::tr(label));
-                                    ui.label(*sc);
+                                    ui.label(sc);
                                     ui.label(egui::RichText::new(*id).color(t.text_dim));
                                     ui.end_row();
                                 }
@@ -780,6 +784,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                                 }
                             }
                             for (sc, id, _) in crate::shortcuts::ALIASES {
+                                if app.ui.settings.navigation.keys.contains_key(*id) { continue; }
                                 let label = crate::menus::ui_commands()
                                     .find(|c| c.0 == *id)
                                     .map(|c| c.1)
@@ -793,10 +798,11 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                         });
                     });
                 }
+                Dialog::NavigationHelp => { navigation_settings |= crate::navigation::help(app, ui); },
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                let informational = matches!(dlg, Dialog::About | Dialog::Shortcuts | Dialog::Settings { .. });
+                let informational = matches!(dlg, Dialog::About | Dialog::Shortcuts | Dialog::NavigationHelp | Dialog::Settings { .. });
                 let sam = &app.session.segmenter;
                 let (sam_installed, sam_running, sam_failed) = (sam.installed(), sam.download_status().running, sam.download_status().error.is_some());
                 // no download location in this build: nothing to offer but the manual install
@@ -869,7 +875,16 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
             _ => close = true,
         }
     }
-    app.ui.dialog = if close { None } else { Some(dlg) };
+    let navigation_help = ctx.data_mut(|d| d.remove_temp::<bool>(egui::Id::new("navigation-help-requested"))).unwrap_or(false);
+    app.ui.dialog = if close {
+        None
+    } else if navigation_help {
+        Some(Dialog::NavigationHelp)
+    } else if navigation_settings {
+        Some(Dialog::Settings { tab: "navigation".into() })
+    } else {
+        Some(dlg)
+    };
 }
 
 /// Apply a dialog's action (also used by `ui.dialog.confirm`).
@@ -952,12 +967,7 @@ fn sam_model_body(app: &mut LightcraftApp, ui: &mut egui::Ui, error: Option<&str
 
 pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_json::Value, String> {
     match dlg {
-        Dialog::Denoise { photo, amount } => {
-            if app.session.enhancer.preview.is_none() {
-                return Err("Prepare the AI denoise preview before applying".into());
-            }
-            app.run("enhance.denoise.apply", json!({"photo":photo,"amount":amount,"wait":false}))
-        }
+        Dialog::Denoise { photo, amount, view } => crate::panels::denoise::apply(app, *photo, *amount, *view),
         Dialog::SamModel { then, .. } => {
             if app.session.segmenter.installed() {
                 // installed: start what the user was doing
@@ -1042,7 +1052,7 @@ pub fn confirm_dialog(app: &mut LightcraftApp, dlg: &Dialog) -> Result<serde_jso
         Dialog::Merge { opts } => crate::merge::start_final(app, opts),
         Dialog::Import { opts } => crate::import::start(app, opts),
         Dialog::ConfirmDelete { .. } => app.run("photo.delete", json!({})),
-        Dialog::About | Dialog::Shortcuts | Dialog::Settings { .. } => Ok(serde_json::Value::Null),
+        Dialog::About | Dialog::Shortcuts | Dialog::NavigationHelp | Dialog::Settings { .. } => Ok(serde_json::Value::Null),
     }
 }
 

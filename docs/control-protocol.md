@@ -37,7 +37,7 @@ mode ([mcp.md](mcp.md)) is a thin layer over this channel. Implementation:
 | `ui.pointer` | `{events: [{kind: down\|drag\|up, x, y}], alt?, shift?, cmd?}` | Gesture in normalized image coordinates (Detail view) |
 | `ui.key` | `{key, cmd?, shift?, alt?, ctrl?, pressed?}` | Key press; optional `pressed: true/false` holds/releases a key across frames |
 | `ui.text` | `{text}` | Text input |
-| `ui.scroll` | `{dx, dy}` | Mouse wheel |
+| `ui.scroll` | `{dx, dy, ctrl?, alt?, shift?, cmd?}` | Mouse wheel; Ctrl+scroll over a photo zooms by default (see [navigation](navigation.md)) |
 | `ui.set` | partial UI state, e.g. `{"view": "detail"}` | Resulting UI state |
 | `ui.dialog.confirm` / `ui.dialog.cancel` | — | Close the open dialog |
 | `ui.resize` | `{width, height}` | Resize the window |

@@ -119,5 +119,7 @@
   "· {dups} already in the library": "· {dups} já na biblioteca",
   "· {n} photo{}": "· {n} foto{:.0}",
   "… and {more} more": "… e mais {more}",
-  "Survey · {n} selected": "Comparação múltipla · {n} selecionadas"
+  "Survey · {n} selected": "Comparação múltipla · {n} selecionadas",
+  "{} + scroll": "{} + rolar",
+  "{} + left drag": "{} + arrastar com botão esquerdo"
 }

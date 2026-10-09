@@ -17,7 +17,8 @@ use crate::theme::Tokens;
 use crate::widgets::register;
 
 /// (id, label) of the tabs, in order.
-pub const TABS: &[(&str, &str)] = &[("general", "General"), ("import", "Import"), ("performance", "Performance"), ("interface", "Interface")];
+pub const TABS: &[(&str, &str)] =
+    &[("general", "General"), ("import", "Import"), ("performance", "Performance"), ("interface", "Interface"), ("navigation", "Navigation")];
 
 /// Thumbnail cache sizes offered (MB).
 const CACHE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
@@ -43,7 +44,73 @@ pub fn body(app: &mut LightcraftApp, ui: &mut egui::Ui, tab: &mut String) {
         "import" => import_tab(app, ui, &t),
         "performance" => performance_tab(app, ui, &t),
         "interface" => interface_tab(app, ui, &t),
+        "navigation" => navigation_tab(app, ui, &t),
         _ => general_tab(app, ui, &t),
+    }
+}
+
+fn navigation_tab(app: &mut LightcraftApp, ui: &mut egui::Ui, t: &Tokens) {
+    use crate::state::{PanButton, WheelModifier};
+    heading(ui, t, "Photo Navigation");
+    hint(ui, t, "These gestures work over the photo and the AI Denoise preview. Other panels keep their normal scrolling.");
+    for (id, label, tool) in [("navigationWheel", "Zoom with wheel", false), ("navigationPanModifier", "Pan with an editing tool", true)] {
+        row(ui, t, label, |ui| {
+            let binding = if tool { &mut app.ui.settings.navigation.pan_modifier } else { &mut app.ui.settings.navigation.wheel_modifier };
+            let r = egui::ComboBox::from_id_salt(id).selected_text(crate::i18n::tr(binding.label())).show_ui(ui, |ui| {
+                for (value, label) in WheelModifier::OPTIONS {
+                    if !tool || !matches!(value, WheelModifier::None) {
+                        ui.selectable_value(binding, *value, crate::i18n::tr(label));
+                    }
+                }
+            });
+            register(ui.ctx(), format!("combo:{id}"), r.response.rect);
+        });
+    }
+    row(ui, t, "Pan while zoomed", |ui| {
+        choices(
+            ui,
+            "navigationPan",
+            &[(PanButton::Primary, "Left drag"), (PanButton::Middle, "Middle drag")],
+            &mut app.ui.settings.navigation.pan_button,
+        );
+    });
+    hint(ui, t, "Hold the selected modifier while dragging with an editing tool. Middle drag always pans; it does not paint or crop.");
+    heading(ui, t, "Zoom shortcuts");
+    hint(ui, t, "Use one key with Ctrl, Cmd, Alt or Shift. Leave empty to disable. Changes apply when you leave the field.");
+    for (command, label, default, _) in crate::menus::ui_commands().filter(|c| crate::navigation::KEY_COMMANDS.contains(&c.0)) {
+        row(ui, t, label, |ui| {
+            let id = egui::Id::new(("navigation-key", command));
+            let current = crate::navigation::shortcut(app, command, *default).unwrap_or("").to_string();
+            let current = if cfg!(target_os = "macos") { current } else { current.replace("Cmd", "Ctrl") };
+            let mut text = ui.data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| current.clone());
+            let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(180.0));
+            register(ui.ctx(), format!("field:navigation.{command}"), r.rect);
+            if r.lost_focus() && text.trim() != current {
+                if let Err(error) = app.run("app.navigationBinding", json!({"command":command,"shortcut":text.trim()})) {
+                    ui.data_mut(|d| d.insert_temp(egui::Id::new("navigation-key-error"), error));
+                } else {
+                    ui.data_mut(|d| d.remove::<String>(egui::Id::new("navigation-key-error")));
+                }
+            }
+            if r.has_focus() {
+                ui.data_mut(|d| d.insert_temp(id, text));
+            } else {
+                ui.data_mut(|d| d.remove::<String>(id));
+            }
+        });
+    }
+    if let Some(error) = ui.data(|d| d.get_temp::<String>(egui::Id::new("navigation-key-error"))) {
+        ui.label(RichText::new(error).color(t.reject));
+    }
+    let r = ui.button(crate::i18n::tr("Reset Navigation"));
+    register(ui.ctx(), "button:navigationReset", r.rect);
+    if r.clicked() {
+        app.ui.settings.navigation = Default::default();
+    }
+    let r = ui.button(crate::i18n::tr("Photo Navigation Help"));
+    register(ui.ctx(), "button:navigationHelp", r.rect);
+    if r.clicked() {
+        ui.data_mut(|d| d.insert_temp(egui::Id::new("navigation-help-requested"), true));
     }
 }
 
