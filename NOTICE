@@ -3,9 +3,14 @@ Copyright (c) 2026 ArtCraft Team and the LightCraft contributors.
 Licensed under the MIT License or the Apache License, Version 2.0, at your option
 (LICENSE-MIT, LICENSE-APACHE).
 
-The ArtCraft name, wordmark and logos in docs/brand/ are trademarks of the ArtCraft Team. They are
-not open source and are not covered by the license above; their terms are in
-docs/brand/LICENSE-brand.txt.
+Fork: https://github.com/SarimSyed/lightcraft
+Maintained by @SarimSyed (https://github.com/SarimSyed).
+Copyright (c) 2026 SarimSyed and fork contributors, for their modifications.
+Based on https://github.com/storytold/lightcraft. Original authorship, copyright
+and third-party notices are retained.
+
+ArtCraft is a trademark of the ArtCraft Team. The ArtCraft wordmark and mark are
+omitted from this fork; the original terms are retained in docs/brand/LICENSE-brand.txt.
 
 Third-party material
 

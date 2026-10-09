@@ -18,7 +18,6 @@ covers a whole directory), or if a licence file referenced in the Licence column
 | `docs/images/*-earthrise.jpg`, `docs/images/grid-pd.jpg` | "Earthrise" (AS08-14-2383) | NASA / Bill Anders, Apollo 8 (1968) | https://commons.wikimedia.org/wiki/File:NASA-Apollo8-Dec24-Earthrise.jpg | Public domain (NASA) | 2026-09-30 | developed in LightCraft; shown inside app screenshots |
 | `docs/images/*-blue-marble.jpg`, `docs/images/grid-pd.jpg` | "The Blue Marble" (AS17-148-22727) | NASA, Apollo 17 crew (1972) | https://commons.wikimedia.org/wiki/File:The_Earth_seen_from_Apollo_17.jpg | Public domain (NASA) | 2026-09-30 | developed in LightCraft; shown inside app screenshots |
 | `docs/images/*.jpg` (UI) | LightCraft application screenshots | LightCraft contributors | original work (captured with `docs/showcase/`) | MIT OR Apache-2.0 | 2026-09-30 | n/a |
-| `docs/brand/` (artcraft-logo and artcraft-mark, SVG and PNG) | ArtCraft wordmark and mark | ArtCraft Team | original work (https://getartcraft.com/) | ArtCraft trademark, see `docs/brand/LICENSE-brand.txt` (not open source) | 2026-10-01 | none |
 | craft-fonts: optional build input, not files in this repository | BIZ UDPGothic (Regular, Bold), BIZ UDMincho Regular, Shippori Mincho Regular | Morisawa Inc. / The BIZ UDGothic and BIZ UDMincho Project Authors; The Shippori Mincho Project Authors (per craft-fonts' attribution) | https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md | SIL Open Font License 1.1 (each font's OFL.txt in craft-fonts; release packages ship it as OFL-<family>.txt) | 2026-10-06 | none; embedded only in builds made with `CRAFT_FONTS_DIR` (all official releases); the web (wasm32) build embeds BIZ UDPGothic Regular only |
 
 Notes
@@ -28,3 +27,21 @@ Notes
   [storytold/craft-fonts](https://github.com/storytold/craft-fonts), with their licences and attribution in its
   `ATTRIBUTION.md`, and are embedded only in builds made with the optional `CRAFT_FONTS_DIR` build input (all official
   releases). Never commit font files here; add new fonts to craft-fonts (craftrules `standards/fonts.md`).
+
+## Fork and validation provenance
+
+This fork is maintained by [@SarimSyed](https://github.com/SarimSyed). That credit covers fork maintenance
+and contributions, not authorship of the pre-existing assets listed above. Code attribution and retained
+third-party notices are in [NOTICE](../NOTICE); contributor credit is documented in
+[docs/contributors.md](../docs/contributors.md).
+
+The ArtCraft wordmark and mark were removed from this fork on 2026-10-09 under the
+[original brand terms](../docs/brand/LICENSE-brand.txt). The original LightCraft app icon remains unchanged
+and retains its creator's attribution above.
+
+Four Nikon D7100 validation NEFs, contributed by Chris Ruff to raw.pixls.us under CC0-1.0, live only in
+ignored `corpus/raw/`: 12/14-bit lossless and lossy type 2. Their exact download URLs, SHA-256 digests,
+measurement method and limitations are recorded in
+[docs/camera-preview-colour.md](../docs/camera-preview-colour.md#nikon-d7100-verification-2026-10-08).
+They and their extracted JPEGs are not shipped assets. Privately supplied D7100 photographs used for
+local validation remain private and are not redistributed or relicensed by this attribution file.

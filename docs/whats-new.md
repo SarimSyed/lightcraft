@@ -1,5 +1,8 @@
 # What's new in LightCraft
 
+For changes introduced by **@SarimSyed's fork** over its inherited v0.4.0 baseline, see
+[What this fork changes](../README.md#what-this-fork-changes). The history below also includes upstream changes.
+
 ## October 2026
 
 ### AI denoise

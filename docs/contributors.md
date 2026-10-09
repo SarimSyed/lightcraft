@@ -5,6 +5,19 @@ the AI models named in `Co-Authored-By` trailers. This follows the shared craftr
 [`standards/contributors.md`](https://github.com/storytold/craftrules/blob/main/standards/contributors.md);
 this page is the local copy of the decision.
 
+## Fork maintainer
+
+[@SarimSyed](https://github.com/SarimSyed) maintains
+[SarimSyed/lightcraft](https://github.com/SarimSyed/lightcraft). The maintainer requested GitHub username
+credit; the entry in `people.toml` uses that username without adding a real name or syncing a profile name.
+Original LightCraft contributors retain their credits.
+
+The bundled `contributors.json` currently records the upstream snapshot. Adding a name to `people.toml`
+does not add a statistics row to the About dialog: the maintainer must regenerate `contributors.json`
+with the official contributor script after the entry is committed. That script is not included in this
+checkout, and its documented `storytold/craftrules` location returned 404 on 2026-10-09.
+The generated snapshot is retained unchanged rather than inventing contributor statistics.
+
 ## Decision
 
 - Two files, both **compiled into the binary** by the UI crate's `build.rs` (nothing is read from
