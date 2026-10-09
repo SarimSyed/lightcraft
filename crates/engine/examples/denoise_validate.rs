@@ -9,6 +9,15 @@ fn main() -> Result<(), String> {
     let model = args.get(1).ok_or("MODEL_DIRECTORY required")?;
     let output = std::path::PathBuf::from(args.get(2).ok_or("OUTPUT_DIRECTORY required")?);
     std::fs::create_dir_all(&output).map_err(|e| e.to_string())?;
+    // Development-only inputs for independently comparing model context/pooling. No weights
+    // or private photographs are bundled with the product or committed to the repository.
+    if args.get(3).is_some_and(|mode| mode == "input") {
+        let (image, _) = lightcraft_engine::files::load_enhancement(source)?;
+        let input = lightcraft_denoise::model_input(&image).map_err(|e| e.to_string())?;
+        std::fs::write(output.join("input.f32"), bytemuck::cast_slice(&input.image().data)).map_err(|e| e.to_string())?;
+        println!("{}", json!({"source":source,"width":image.width,"height":image.height,"encoding":"interleaved native-endian F32 sRGB"}));
+        return Ok(());
+    }
     let mut session = Session::new().with_fs();
     session.enhancer.model_dir = model.into();
     session.execute("library.import", &json!({"paths":[source]})).map_err(|e| e.to_string())?;

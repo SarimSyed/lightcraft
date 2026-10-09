@@ -1305,5 +1305,6 @@
   "Use the crop navigator to inspect another area. Arrow keys move the crop.": "使用预览区域导航查看其他区域。方向键可移动预览。",
   "Zoom shortcuts": "缩放快捷键",
   "Zoom with wheel": "滚轮缩放",
-  "Preview ready": "预览已就绪"
+  "Preview ready": "预览已就绪",
+  "Current colour and Detail edits · Preview before geometry.": "使用当前色彩和细节调整 · 几何变换前的预览。"
 }

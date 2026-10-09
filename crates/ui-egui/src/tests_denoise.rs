@@ -143,6 +143,13 @@ fn denoise_amount_preview_and_before_leave_history_untouched_until_apply() {
     assert!(h.view.ctx.input(|i| i.key_down(egui::Key::Space)));
     h.request("ui.key", json!({"key":"space","pressed":false}), timeout);
     assert_eq!(h.app.session.develop_of(id).unwrap(), before);
+    // Control-channel edits while the dialog is open must refresh the saved-photo look.
+    assert_eq!(h.request("engine.execute", json!({"command":"develop.set","params":{"control":"light.exposure","value":1.5}}), timeout)["ok"], true);
+    assert!(
+        h.step_until(timeout, |h| h.app.session.enhancer.preview.as_ref().is_some_and(|p| p.settings.light.exposure == 1.5)),
+        "the denoise preview stayed on the old photo settings"
+    );
+    let before = h.app.session.develop_of(id).unwrap();
     assert_eq!(h.request("ui.dialog.confirm", json!({}), timeout)["ok"], true);
     h.step_until(timeout, |h| h.app.session.develop_of(id).is_some_and(|d| d.enhance.model.is_some()));
     assert!(h.app.session.develop_of(id).unwrap().enhance.denoise > 50.0);

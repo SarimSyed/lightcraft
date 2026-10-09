@@ -15,6 +15,17 @@ without re-running inference or changing history. Apply processes the full image
 and saves one undoable edit after its result has been written successfully.
 Cancel, failures and stale completions do not change the saved edit.
 
+The crop uses the photo's current profile, white balance, tone, colour and Detail
+settings. Before bypasses AI only and retains those edits. Grain and vignette
+placement use the full photo's coordinates. A saved edit made through the control
+channel refreshes the open dialog. Detail filters receive surrounding pixels
+(up to 128 per side), and the displayed crop is trimmed afterwards; Amount and
+Before reuse that prediction. The dialog remains a **source-coordinate preview
+before user geometry**. Very broad spatial effects (for example dehaze or large
+local-tone radii), lens warps and transformed retouch/mask coordinates are not an
+export-fidelity guarantee in this bounded crop; check the developed view/export
+for their final appearance.
+
 ## Photographic quality assessment (2026-10-09)
 
 Fresh physical Vulkan runs on the user's two Nikon D7100 ISO 6400 NEFs
@@ -40,6 +51,36 @@ validation. It must not receive developed RGB through the current RGB interface.
 The main Detail preview's configured resolution limit can also soften apparent
 detail at high zoom. The navigable AI dialog at 100% evaluates source-resolution
 pixels and is the appropriate in-app view for judging this model's result.
+
+### Context and detail-strength experiments (2026-10-09)
+
+Development-only PyTorch experiments used the identical width-32 safetensors
+bundle, pinned author network and exact (non-fast) local pooling implementation
+at upstream revision `2b4af71ebe098a92a75910c233a3965a3e93ede4`.
+512-pixel tiles retained 64-pixel overlap, source-grid anchoring, zero padding and
+the same tapered blend. Local pooling was initialized at the author's 256-pixel
+training size with a 384-pixel base. It is an experiment, not a correction to the
+published SIDD configuration, which specifies ordinary NAFNet/global pooling.
+
+One procedural gradient/colour-edge/texture scene at two noise levels used
+seeded (`1234`) independent Gaussian noise in encoded sRGB, clipped to 0–1. The 256×192 interior
+evaluation crop gave these PSNR values (dB; higher is better):
+
+| Noise sigma | Noisy | Current 256/global | 512/global | 512/local | Detail-aware blend |
+|---|---:|---:|---:|---:|---:|
+| 0.02 | 33.995 | 44.243 | 44.454 | 43.993 | 44.040 |
+| 0.05 | 26.036 | 39.290 | 38.912 | 38.652 | 38.962 |
+
+The detail prototype reduced correction by up to 40% at gradients measured on a
+3×3-smoothed predicted luminance image (smoothstep thresholds 0.005–0.035 per
+pixel). It increased edge error on both paired scenes. Larger context had mixed
+accuracy; local pooling reduced PSNR here. On both private Nikon crops, larger
+tiles took 3.6–4.7× as long in this **CPU reference tool**, with no clean reference
+to establish improved photographic quality. These are not product GPU benchmarks
+or SIDD/RAW benchmark scores. The prototypes were not retained in inference,
+Amount blending, saved edits or cache revisions. The next model-quality change
+needs broader paired photographic validation rather than an extra strength
+heuristic. Private inputs and comparison images remain outside the repository.
 
 ## Model and delivery status
 

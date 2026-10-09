@@ -36,7 +36,11 @@ Noise reduction now has procedural noise, colour-edge and brightness checks, cac
 Compare and Survey now have pointer-driven regression coverage as well as keyboard checks: thumbnail clicks replace the Compare candidate, and Survey preserves its selected group while adding or removing photos. Survey shows its selected count and usage guidance; it is not limited to four photos.
 
 Photo navigation now supports Ctrl+scroll and configurable zoom keys/gestures,
-with in-app help. The AI preview can inspect any source crop. Fresh ISO 6400
+with in-app help. The AI preview can inspect any source crop and retains the
+photo's current colour/Detail edits, source radii and vignette/grain placement;
+very broad spatial effects and transformed masks/retouch still need final-view
+verification. Larger-context/local-pooling and detail-strength prototypes did
+not show a consistent quality gain and were not added. Fresh ISO 6400
 D7100 crop inspection still shows texture softening at high NAFNet amounts;
 sensor-stage denoise quality and Lightroom comparison remain open (docs/denoise.md).
 

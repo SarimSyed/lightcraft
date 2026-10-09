@@ -84,6 +84,7 @@ impl SourceResolver {
         &self,
         model: &DenoiseModel,
         region: Option<Region>,
+        halo: usize,
         cancel: &Cancellation,
         progress: &(dyn Fn(usize, usize) + Sync),
     ) -> std::result::Result<Completed, String> {
@@ -117,6 +118,7 @@ impl SourceResolver {
                 source
             }
         };
+        let region = region.map(|r| expanded_region(&source.image, r, halo)).transpose()?;
         let key = self.key(&source.image, model)?;
         // A corrupt/missing artifact can be regenerated, but never silently bypassed.
         let cached = self.cached(&key, &source.image, model).ok().flatten();
@@ -190,6 +192,7 @@ impl SourceResolver {
         &self,
         _: &DenoiseModel,
         _: Option<Region>,
+        _: usize,
         _: &Cancellation,
         _: &(dyn Fn(usize, usize) + Sync),
     ) -> std::result::Result<Completed, String> {
@@ -198,12 +201,12 @@ impl SourceResolver {
     /// Central render source. Errors propagate through render and export.
     pub fn resolve(&self, settings: &DevelopSettings) -> std::result::Result<DecodedSource, String> {
         let model = settings.enhance.model.as_ref().ok_or("no denoise model selected")?;
-        let result = crate::guard::catch("AI denoise source", || self.process(model, None, &Cancellation::default(), &|_, _| {}))??;
+        let result = crate::guard::catch("AI denoise source", || self.process(model, None, 0, &Cancellation::default(), &|_, _| {}))??;
         let image = lightcraft_denoise::blend(&result.original.image, &result.enhanced, settings.enhance.denoise).map_err(|e| e.to_string())?;
         Ok(DecodedSource { image: Arc::new(image), info: result.original.info, camera_tone: result.original.camera_tone })
     }
 }
-fn crop(image: &Rgb32f, region: Region) -> std::result::Result<Rgb32f, String> {
+fn expanded_region<T>(image: &lightcraft_raster::Image<T>, region: Region, halo: usize) -> std::result::Result<Region, String> {
     if region.width == 0
         || region.height == 0
         || region.x.checked_add(region.width).is_none_or(|e| e > image.width)
@@ -211,13 +214,31 @@ fn crop(image: &Rgb32f, region: Region) -> std::result::Result<Rgb32f, String> {
     {
         return Err("Preview region lies outside the full source".into());
     }
-    let mut data = Vec::with_capacity(region.width * region.height);
+    let x = region.x.saturating_sub(halo);
+    let y = region.y.saturating_sub(halo);
+    let right = (region.x + region.width).saturating_add(halo).min(image.width);
+    let bottom = (region.y + region.height).saturating_add(halo).min(image.height);
+    Ok(Region { x, y, width: right - x, height: bottom - y })
+}
+fn crop<T: Copy>(image: &lightcraft_raster::Image<T>, region: Region) -> std::result::Result<lightcraft_raster::Image<T>, String> {
+    expanded_region(image, region, 0)?;
+    let count = region.width.checked_mul(region.height).filter(|n| *n <= lightcraft_denoise::MAX_PIXELS).ok_or("Preview allocation exceeds limit")?;
+    let mut data = Vec::with_capacity(count);
     for y in region.y..region.y + region.height {
         data.extend_from_slice(
             image.data.get(y * image.width + region.x..y * image.width + region.x + region.width).ok_or("invalid preview extent")?,
         );
     }
-    Ok(Rgb32f { width: region.width, height: region.height, data })
+    Ok(lightcraft_raster::Image { width: region.width, height: region.height, data })
+}
+fn preview_halo(settings: &DevelopSettings, long_edge: usize) -> usize {
+    let settings = lightcraft_pipeline::profiles::effective(settings);
+    let p = lightcraft_pipeline::local::plane_sigmas(&settings, long_edge as f64, lightcraft_pipeline::Quality::Full);
+    let (lum, color) = lightcraft_pipeline::local::nr_params(&settings, long_edge, long_edge);
+    let sigma =
+        [p.base, p.clarity, p.texture, p.dark, p.chroma, lum.map(|n| n.sigma), color.map(|n| n.sigma)].into_iter().flatten().fold(0.0f32, f32::max);
+    // ponytail: bounded context covers detail filters; very wide tone filters remain approximate.
+    (sigma * 6.0).ceil().clamp(0.0, 128.0) as usize
 }
 struct Completed {
     original: DecodedSource,
@@ -251,6 +272,7 @@ struct Pending {
     apply: bool,
     amount: f64,
     model: DenoiseModel,
+    region: Option<Region>,
 }
 pub struct Preview {
     pub original: Arc<Rgb32f>,
@@ -258,16 +280,30 @@ pub struct Preview {
     pub region: Region,
     pub info: lightcraft_pipeline::SourceInfo,
     pub operation: u64,
+    pub settings: Arc<DevelopSettings>,
+    source: Arc<Rgb32f>,
+    context_region: Region,
+    context_original: Arc<Rgb32f>,
+    context_enhanced: Arc<Rgb32f>,
 }
 impl Preview {
     pub fn render(&self, amount: f64, before: bool) -> std::result::Result<Rgba8, String> {
         let image = if before {
-            (*self.original).clone()
+            (*self.context_original).clone()
         } else {
-            lightcraft_denoise::blend(&self.original, &self.enhanced, amount).map_err(|e| e.to_string())?
+            lightcraft_denoise::blend(&self.context_original, &self.context_enhanced, amount).map_err(|e| e.to_string())?
         };
-        let req = lightcraft_pipeline::RenderRequest { apply_crop: false, ..lightcraft_pipeline::RenderRequest::fit(image.width, image.height) };
-        Ok(lightcraft_pipeline::render(&image, &self.info, &DevelopSettings::default(), &req).image)
+        let rendered =
+            lightcraft_pipeline::render_source_crop(&self.source, image, (self.context_region.x, self.context_region.y), &self.info, &self.settings)?
+                .image;
+        crop(
+            &rendered,
+            Region {
+                x: self.region.x.checked_sub(self.context_region.x).ok_or("Preview lies outside its rendering context")?,
+                y: self.region.y.checked_sub(self.context_region.y).ok_or("Preview lies outside its rendering context")?,
+                ..self.region
+            },
+        )
     }
 }
 pub struct Enhancer {
@@ -329,7 +365,7 @@ impl Enhancer {
             images.push(result.clone());
         }
         if let Some(preview) = &self.preview {
-            for image in [&preview.original, &preview.enhanced] {
+            for image in [&preview.source, &preview.original, &preview.enhanced, &preview.context_original, &preview.context_enhanced] {
                 if !images.iter().any(|other| Arc::ptr_eq(other, image)) {
                     images.push(image.clone());
                 }
@@ -458,12 +494,13 @@ impl Session {
         let request_model = model.clone();
         let origin_stamp = stamp(&photo.source);
         let operation = self.enhancer.sequence;
+        let halo = if apply { 0 } else { preview_halo(&photo.develop, photo.width.max(photo.height) as usize) };
         let (tx, rx) = mpsc::channel();
         std::thread::Builder::new()
             .name("ai-denoise".into())
             .spawn(move || {
                 let result = crate::guard::catch("AI denoise worker", || {
-                    resolver.process(&request_model, region, &token, &|done, total| {
+                    resolver.process(&request_model, region, halo, &token, &|done, total| {
                         if token.check().is_err() {
                             return;
                         }
@@ -495,6 +532,7 @@ impl Session {
             apply,
             amount,
             model,
+            region,
         });
         if wait {
             let result = self.enhancer.pending.as_ref().ok_or_else(|| crate::cmd::bad(c, "operation disappeared"))?.rx.recv();
@@ -555,19 +593,48 @@ impl Session {
                     let height = result.region.height.min(320);
                     Region { x: (result.region.width - width) / 2, y: (result.region.height - height) / 2, width, height }
                 } else {
+                    pending.region.unwrap_or(result.region)
+                };
+                let settings = self.develop_of(pending.photo).ok_or_else(|| crate::cmd::bad("enhance.denoise.preview", "photo no longer exists"))?;
+                let context_region = if pending.apply {
+                    expanded_region(
+                        &result.original.image,
+                        preview_region,
+                        preview_halo(&settings, result.original.image.width.max(result.original.image.height)),
+                    )
+                    .map_err(|e| crate::cmd::bad("enhance.denoise.preview", e))?
+                } else {
                     result.region
                 };
-                let enhanced = if preview_region == result.region {
+                let context_original =
+                    Arc::new(crop(&result.original.image, context_region).map_err(|e| crate::cmd::bad("enhance.denoise.preview", e))?);
+                let context_enhanced = if context_region == result.region {
                     result.enhanced
                 } else {
-                    Arc::new(crop(&result.enhanced, preview_region).map_err(|e| crate::cmd::bad("enhance.denoise.preview", e))?)
+                    Arc::new(crop(&result.enhanced, context_region).map_err(|e| crate::cmd::bad("enhance.denoise.preview", e))?)
+                };
+                let relative = Region { x: preview_region.x - context_region.x, y: preview_region.y - context_region.y, ..preview_region };
+                let original = if context_region == preview_region {
+                    context_original.clone()
+                } else {
+                    Arc::new(crop(&context_original, relative).map_err(|e| crate::cmd::bad("enhance.denoise.preview", e))?)
+                };
+                let enhanced = if context_region == preview_region {
+                    context_enhanced.clone()
+                } else {
+                    Arc::new(crop(&context_enhanced, relative).map_err(|e| crate::cmd::bad("enhance.denoise.preview", e))?)
                 };
                 self.enhancer.preview = Some(Preview {
-                    original: Arc::new(crop(&result.original.image, preview_region).map_err(|e| crate::cmd::bad("enhance.denoise.preview", e))?),
+                    original,
                     enhanced,
                     region: preview_region,
-                    info: result.original.info.unwrap_or_default(),
+                    info: result.original.info_or(self.source_info(pending.photo)),
                     operation: self.enhancer.sequence,
+                    settings,
+                    source: result.original.image,
+                    context_region,
+                    context_original,
+                    context_enhanced,
                 });
                 let mut status = self.enhancer.status.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
                 status.state = "success".into();

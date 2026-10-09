@@ -50,7 +50,9 @@ fn region(app: &LightcraftApp, photo: u64, view: DenoiseView) -> Result<lightcra
 }
 fn prepare(app: &mut LightcraftApp, photo: u64, amount: f64, view: DenoiseView) -> Result<Value, String> {
     let region = region(app, photo, view)?;
-    if app.session.enhancer.preview.as_ref().is_some_and(|p| p.region == region) {
+    if app.session.enhancer.preview.as_ref().is_some_and(|p| {
+        p.region == region && app.session.develop_of(lightcraft_catalog::PhotoId(photo)).is_some_and(|s| s.hash64() == p.settings.hash64())
+    }) {
         return Ok(Value::Null);
     }
     app.run("enhance.denoise.preview", json!({"photo":photo,"amount":amount,"wait":false,"region":region}))
@@ -117,6 +119,18 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
     let mut retry = false;
     let mut next_view = view;
     let pending = app.ui.denoise_due.is_some();
+    let stale = app
+        .session
+        .enhancer
+        .preview
+        .as_ref()
+        .is_some_and(|p| app.session.develop_of(lightcraft_catalog::PhotoId(photo)).is_some_and(|s| s.hash64() != p.settings.hash64()));
+    if stale && !running && !status.applying && !pending {
+        if let Err(error) = prepare(app, photo, amount, view) {
+            app.ui.status = error;
+        }
+        ctx.request_repaint();
+    }
     if pending {
         ctx.request_repaint_after(std::time::Duration::from_millis(30));
     }
@@ -136,6 +150,7 @@ pub fn show(app: &mut LightcraftApp, ctx: &egui::Context) {
                 ui.label(&p.file_name);
             }
             ui.label(RichText::new(tr("RGB-stage denoise · Higher amounts remove more noise and may soften fine texture.")).color(t.text_dim));
+            ui.label(RichText::new(tr("Current colour and Detail edits · Preview before geometry.")).color(t.text_dim));
             if !installed && app.session.enhancer.preview.is_none() && !running {
                 ui.label(tr("Install NAFNet to prepare the preview."));
                 ui.label(tr("Model size: 116.7 MB. Inference runs locally."));

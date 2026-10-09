@@ -162,6 +162,8 @@ pub struct FinishParams {
     /// Refine Saturation as 0..1 (1 = the curves' own saturation).
     pub refine_sat: f32,
     pub vig: Option<Vig>,
+    /// Source-crop previews retain the photo's vignette frame, rather than recentering it.
+    pub vignette_frame: Option<(lightcraft_geom::Affine, f32)>,
     /// Linear Rec.2020 → linear output RGB, the output's luminance weights (gamut mapping) and its
     /// encoding curve (see [`crate::output`]).
     pub to_out: [[f32; 3]; 3],
@@ -233,6 +235,7 @@ impl FinishParams {
             curves: curve_luts(&s.curve),
             refine_sat: (s.curve.refine_saturation / 100.0).clamp(0.0, 1.0) as f32,
             vig: if effects { vignette(s) } else { None },
+            vignette_frame: None,
             to_out: space.from_working(),
             out_luma: space.luma(),
             out_trc: space.trc(),
@@ -259,10 +262,26 @@ impl FinishParams {
     }
 }
 
-pub(crate) fn finish(p: &Prepared, s: &DevelopSettings, frame: &Frame, info: &SourceInfo, space: OutputSpace, proof: Option<crate::Proof>) -> Rgba8 {
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn finish(
+    p: &Prepared,
+    s: &DevelopSettings,
+    frame: &Frame,
+    info: &SourceInfo,
+    space: OutputSpace,
+    proof: Option<crate::Proof>,
+    vignette_frame: Option<&Frame>,
+) -> Rgba8 {
     let (w, h) = (p.img.width, p.img.height);
     let mut fp = FinishParams::new(s, frame, info, w, h, p.px_per_long, p.air, space);
     fp.proof = proof.map(|pr| pr.params(space));
+    if let Some(reference) = vignette_frame {
+        let (x, y) = reference.orient.map(0.0, 0.0, 1.0, 1.0);
+        let (xx, xy) = reference.orient.map(1.0, 0.0, 1.0, 1.0);
+        let (yx, yy) = reference.orient.map(0.0, 1.0, 1.0, 1.0);
+        let orient = lightcraft_geom::Affine([xx - x, xy - y, yx - x, yy - y, x, y]);
+        fp.vignette_frame = Some((reference.norm_to_out(2, 2) * orient * fp.out_to_norm, reference.aspect() as f32));
+    }
     let trc = fp.out_trc;
     let data = finish_with(p, &fp, false, |e| match trc {
         OutputTrc::Srgb => [enc(e[0]), enc(e[1]), enc(e[2]), 255],
@@ -344,7 +363,7 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
     let terms: Vec<[f32; MASK_TERMS]> = p.masks.iter().map(|m| mask_terms(&m.adjust)).collect();
     let out_to_norm = fp.out_to_norm;
     let long = fp.ow.max(fp.oh);
-    let aspect = w as f32 / h as f32;
+    let aspect = fp.vignette_frame.map_or(w as f32 / h as f32, |(_, aspect)| aspect);
 
     let srgb = srgb_lut();
     let mut out = vec![T::default(); w * h];
@@ -502,8 +521,12 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
 
             // --- vignette (display linear, post-crop)
             if let Some(v) = vig {
-                let u = (x as f32 + 0.5) / w as f32 * 2.0 - 1.0;
-                let vv = (y as f32 + 0.5) / h as f32 * 2.0 - 1.0;
+                let (u, vv) = if let Some((xf, _)) = fp.vignette_frame {
+                    let p = xf.apply(Point::new(x as f64 + 0.5, y as f64 + 0.5));
+                    (p.x as f32 - 1.0, p.y as f32 - 1.0)
+                } else {
+                    ((x as f32 + 0.5) / w as f32 * 2.0 - 1.0, (y as f32 + 0.5) / h as f32 * 2.0 - 1.0)
+                };
                 let sx = 1.0 + (aspect - 1.0) * v.aspect_mix;
                 let sy = 1.0 + (1.0 / aspect - 1.0) * v.aspect_mix;
                 let (ax, ay) = ((u * sx.max(1.0) / sx.max(sy)).abs(), (vv * sy.max(1.0) / sx.max(sy)).abs());

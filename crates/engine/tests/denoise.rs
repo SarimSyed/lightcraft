@@ -18,6 +18,59 @@ fn preview_missing_model_is_actionable_and_does_not_commit() {
 
 #[cfg(feature = "reference-validation")]
 #[test]
+fn preview_crop_preserves_the_photos_colour_and_source_coordinates() {
+    let dir = std::env::temp_dir().join(format!("lc-denoise-crop-colour-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("source.tif");
+    let pixels: Vec<f32> = (0..256 * 192).flat_map(|i| [0.12 + (i % 31) as f32 * 0.003, 0.24, 0.35]).collect();
+    std::fs::write(
+        &path,
+        lightcraft_codecs::encode_tiff(
+            &lightcraft_codecs::EncodeImage::new(256, 192, 3, lightcraft_codecs::Samples::F32(&pixels)),
+            lightcraft_codecs::TiffCompression::Deflate,
+            &Default::default(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut s = Session::new().with_fs();
+    s.enhancer.model_dir = std::env::var("LIGHTCRAFT_NAFNET_REFERENCE").expect("required model absent").into();
+    s.execute("library.import", &json!({"paths":[path]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    s.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+    s.execute("develop.set", &json!({"control":"light.exposure","value":0.75})).unwrap();
+    s.execute("develop.set", &json!({"control":"grain.amount","value":60})).unwrap();
+    s.execute("develop.set", &json!({"control":"detail.nrColor","value":80})).unwrap();
+    s.execute("develop.set", &json!({"control":"detail.sharpenAmount","value":90})).unwrap();
+    s.execute("develop.set", &json!({"control":"vignette.amount","value":-60})).unwrap();
+    let before = s.develop_of(id).unwrap();
+    let full = s.render_job(id, 256, 192, false, true).unwrap().run().rendered.unwrap().image;
+    s.execute("enhance.denoise.preview", &json!({"wait":true,"region":{"x":0,"y":0,"width":64,"height":48}})).unwrap();
+    let preview = s.enhancer.preview.as_ref().unwrap().render(0.0, true).unwrap();
+    assert_eq!((preview.width, preview.height), (64, 48));
+    let difference = (0..48)
+        .flat_map(|y| (0..64).map(move |x| (x, y)))
+        .flat_map(|(x, y)| preview.data[y * 64 + x].into_iter().zip(full.data[y * 256 + x]).map(|(a, b)| a.abs_diff(b)))
+        .max()
+        .unwrap();
+    assert!(difference <= 1, "crop changed source-coordinate effects: {difference} LSB");
+    assert_eq!(s.develop_of(id).unwrap(), before);
+    let enhanced_preview = s.enhancer.preview.as_ref().unwrap().render(50.0, false).unwrap();
+    s.execute("enhance.denoise.apply", &json!({"wait":true,"amount":50})).unwrap();
+    let applied = s.render_job(id, 256, 192, false, true).unwrap().run().rendered.unwrap().image;
+    let difference = (0..48)
+        .flat_map(|y| (0..64).map(move |x| (x, y)))
+        .flat_map(|(x, y)| enhanced_preview.data[y * 64 + x].into_iter().zip(applied.data[y * 256 + x]).map(|(a, b)| a.abs_diff(b)))
+        .max()
+        .unwrap();
+    assert!(difference <= 1, "preview changed after full-resolution Apply: {difference} LSB");
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.develop_of(id).unwrap(), before);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(feature = "reference-validation")]
+#[test]
 fn apply_is_one_undoable_edit_and_cached_amounts_render_without_weights() {
     use lightcraft_engine::catalog::{Op, Photo, Source};
     let dir = std::env::temp_dir().join(format!("lc-denoise-engine-{}", std::process::id()));
@@ -44,10 +97,13 @@ fn apply_is_one_undoable_edit_and_cached_amounts_render_without_weights() {
     let photo = Photo::new(id, Source::File { path: path.to_string_lossy().into() }, "original.tif", "TIFF", 32, 24, "2026-10-08");
     s.commit("Import", Op::AddPhoto { photo: Box::new(photo) }).unwrap();
     s.execute("library.select", &json!({"ids":[id.0]})).unwrap();
+    s.execute("develop.set", &json!({"control":"light.exposure","value":1.25})).unwrap();
+    s.execute("develop.set", &json!({"control":"color.saturation","value":-35})).unwrap();
     let before = s.develop_of(id).unwrap();
     let baseline = s.render_job(id, 32, 24, false, true).unwrap().run().rendered.unwrap().image;
     s.execute("enhance.denoise.preview", &json!({"wait":true})).unwrap();
     assert_eq!(s.develop_of(id).unwrap(), before);
+    assert_eq!(s.enhancer.preview.as_ref().unwrap().render(50.0, true).unwrap(), baseline, "Before must show the current photo's develop settings");
     let status = s.execute("enhance.denoise.status", &json!({})).unwrap();
     assert!(status["backend"].as_str().is_some_and(|name| !name.is_empty()));
     assert_eq!(status["cpu_fallback"].as_bool(), Some(status["fallback_reason"].is_string()));
@@ -112,7 +168,7 @@ fn apply_is_one_undoable_edit_and_cached_amounts_render_without_weights() {
     reopened.execute("library.select", &json!({"ids":[id.0]})).unwrap();
     reopened.execute("develop.set", &json!({"control":"enhance.denoise","value":0})).unwrap();
     let zero = reopened.render_job(id, 32, 24, false, true).unwrap().run().rendered.unwrap().image;
-    assert_eq!(zero, reopened.render_job(id, 32, 24, true, true).unwrap().run().rendered.unwrap().image);
+    assert_eq!(zero, baseline, "amount zero must preserve the current edits exactly");
     // Copying settings cannot reuse another photo's cached pixels.
     reopened.execute("develop.set", &json!({"control":"enhance.denoise","value":50})).unwrap();
     reopened.execute("develop.copy", &json!({"groups":["detail"]})).unwrap();

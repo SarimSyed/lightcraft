@@ -35,3 +35,9 @@ LIGHTCRAFT_NAFNET_REFERENCE=/path/to/reference-bundle \
 
 This deliberately fails if its model or independent references are missing.
 See [denoise documentation](../../docs/denoise.md) for provenance and delivery gates.
+
+Larger tiles/local pooling and detail-aware Amount blending were evaluated in
+development reference tooling and not retained after mixed/regressive paired
+scene results. The engine source-crop renderer now applies the photo's current
+colour/Detail settings with native radii and bounded surrounding context; this
+does not change network predictions or the processing/cache revision.

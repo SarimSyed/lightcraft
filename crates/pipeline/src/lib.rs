@@ -350,13 +350,37 @@ pub fn lin_cpu(img: &mut Rgb32f, info: &SourceInfo, p: &Plan<'_>) {
 
 /// Render `src` with settings `s`.
 pub fn render(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) -> Rendered {
-    render_impl(Src::Borrowed(src), info, s, req, None)
+    render_impl(Src::Borrowed(src), info, s, req, None, None)
+}
+
+/// Develop already sampled, native-resolution source pixels before user geometry. Coordinates
+/// and detail radii remain relative to the full source, rather than to the preview buffer.
+/// Spatial filters see only this buffer; callers should include a halo and trim it afterwards.
+pub fn render_source_crop(src: &Rgb32f, image: Rgb32f, origin: (usize, usize), info: &SourceInfo, s: &DevelopSettings) -> Result<Rendered, String> {
+    let (x, y) = origin;
+    if src.width.checked_mul(src.height).is_none_or(|n| n == 0 || n > 100_000_000 || n != src.data.len())
+        || image.width.checked_mul(image.height).is_none_or(|n| n == 0 || n != image.data.len())
+        || x.checked_add(image.width).is_none_or(|e| e > src.width)
+        || y.checked_add(image.height).is_none_or(|e| e > src.height)
+        || image.data.iter().flatten().any(|v| !v.is_finite())
+    {
+        return Err("Invalid source crop dimensions or samples".into());
+    }
+    let mut frame = geometry::Frame::new(src.width, src.height, &DevelopSettings::default(), false);
+    frame.crop.rect = lightcraft_geom::Rect::new(
+        x as f64 / src.width as f64,
+        y as f64 / src.height as f64,
+        (x + image.width) as f64 / src.width as f64,
+        (y + image.height) as f64 / src.height as f64,
+    );
+    let req = RenderRequest::fit(image.width, image.height);
+    Ok(render_impl(Src::Borrowed(src), info, s, &req, None, Some((image, frame))))
 }
 
 /// [`render`], reusing (and refreshing) the intermediate results in `cache`. The output is
 /// identical to [`render`]'s.
 pub fn render_cached(src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest, cache: &StageCache) -> Rendered {
-    render_impl(Src::Shared(src), info, s, req, Some(cache))
+    render_impl(Src::Shared(src), info, s, req, Some(cache), None)
 }
 
 enum Src<'a> {
@@ -364,7 +388,14 @@ enum Src<'a> {
     Shared(&'a Arc<Rgb32f>),
 }
 
-fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest, cache: Option<&StageCache>) -> Rendered {
+fn render_impl(
+    src: Src<'_>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    cache: Option<&StageCache>,
+    source_crop: Option<(Rgb32f, geometry::Frame)>,
+) -> Rendered {
     // `Instant::now()` panics on wasm32-unknown-unknown: only read the clock when profiling.
     let lap = |what: &str, t: &mut Option<std::time::Instant>| {
         if let Some(t) = t {
@@ -377,7 +408,18 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
         Src::Borrowed(r) => r,
         Src::Shared(a) => a,
     };
-    let plan = plan(src_img, info, s, req);
+    let mut plan = plan(src_img, info, s, req);
+    let vignette_frame = source_crop.as_ref().map(|_| plan.frame.clone());
+    let source_crop = source_crop.map(|(image, frame)| {
+        plan.w = image.width;
+        plan.h = image.height;
+        plan.px_per_long = src_img.width.max(src_img.height) as f64;
+        // Native source pixels have not been downsampled, regardless of the crop's size.
+        plan.src_long = image.width.max(image.height);
+        plan.eyes = redeye::resolve(src_img, &plan.settings.red_eye, lightcraft_geom::Orientation::Normal, &frame, plan.w, plan.h, plan.px_per_long);
+        plan.frame = frame;
+        Arc::new(image)
+    });
     let Plan { ref frame, w, h, px_per_long, src_long, geo, lin_key, .. } = plan;
     let s = &*plan.settings;
 
@@ -388,7 +430,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
     let cached = shared.and_then(|(a, c)| c.get(a, geo));
     let sampled = match &cached {
         Some(e) => e.sampled.clone(),
-        None => Arc::new(frame.sample(src_img, w, h)),
+        None => source_crop.unwrap_or_else(|| Arc::new(frame.sample(src_img, w, h))),
     };
     lap("sample", &mut t);
 
@@ -419,7 +461,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
         lap("finish (deep)", &mut t);
         return Rendered { image, histogram, deep: Some(deep) };
     }
-    let image = finish::finish(&prep, s, frame, info, req.space, req.proof);
+    let image = finish::finish(&prep, s, frame, info, req.space, req.proof, vignette_frame.as_ref());
     lap("finish", &mut t);
     let histogram = Histogram::of_srgb8(&image);
     lap("histogram", &mut t);
