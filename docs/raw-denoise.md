@@ -88,6 +88,13 @@ from a check tile; this estimate can choose imperfectly on unmeasured hardware.
 Settings offers Automatic, Graphics card and Processor. GPU tests cover supported
 synthetic networks against the scalar executor; a real-model test compares CPU/GPU.
 
+The convolution kernel stores its shared input tile as scalar elements, each with
+one writer, and gathers vectors after a workgroup barrier. Writing separate lanes
+of the same shared vector from different invocations is not safe under WGSL
+([component references](https://www.w3.org/TR/WGSL/#vector-component-reference));
+this caused incorrect Metal results (issue #479). Synthetic equivalence tests include
+repeated partial tiles and concurrent calls, and reject non-finite outputs.
+
 ### Historical performance, measured 2026-10-07
 
 These are the contributor's measurements **before the current upstream integration**,
@@ -114,6 +121,51 @@ LC_DENOISE_MODEL=<model.onnx> LC_DENOISE_RAW=<corpus/raw> cargo test --release -
 LC_DENOISE_MODEL=<model.onnx> LC_DENOISE_RAW=<corpus/raw> cargo test --release -p lightcraft-engine --features rawnind-model --test denoise_real -- --ignored --nocapture
 ```
 
+## Another computer's graphics card
+
+A laptop can hand tiles to a desktop with a bigger graphics card over a LAN or a VPN. The server runs the installed,
+selected model the way the app does (the card when it can run it, checked against the CPU first; else the CPU):
+
+```text
+export LIGHTCRAFT_DENOISE_TOKEN='a long random string, at least 16 characters'
+lightcraft-cli denoise-serve --listen 100.101.102.103:7990          # e.g. the machine's Tailscale address
+```
+
+On the laptop, before LightCraft starts:
+
+```text
+export LIGHTCRAFT_DENOISE_URL=100.101.102.103:7990
+export LIGHTCRAFT_DENOISE_TOKEN='…the same token…'
+```
+
+When the laptop first uses the model it greets the server and times a check tile there and back. If that is faster
+than a tile on the laptop (its graphics card, or its processor with the tiles it runs at once), the server's slots
+(four tiles in flight) are added to the laptop's own: a tile goes to the server when one of its slots is free and runs
+locally otherwise. If it is slower, nothing is sent, so a photo never waits for the slower machine:
+`denoise.status` → `device.remote.state` is `slower`, with both times (`remoteMs`, `localMs`). Measured with
+RawNIND: an Apple M3 laptop does a tile in 116 ms, an RTX 3060 Ti reached over Tailscale 345 ms there and back,
+so that laptop keeps its tiles; one without a fast card hands them over. A tile the server fails runs locally; after
+three failures the server is no longer used for that model. Both ends must
+run the same model file: the client compares the manifest's SHA-256 (or the file's) when it first greets the server,
+and the server checks it again for every tile. `denoise.status` → `device.remote` reports the server's address, its
+device and whether it is used, or why not.
+
+**The protocol is not encrypted.** Listen on a VPN address (Tailscale, WireGuard) or a LAN, or bind every interface
+behind a firewall rule that admits only the VPN; never expose the port to the internet. Requests carry the shared
+token (compared in constant time); the server refuses other models, other tile sizes, oversized headers and payloads
+(also ones that inflate past their tile) and caps concurrent connections (`--max-connections`, default 8).
+
+Protocol version 1 (`crates/denoise/src/remote.rs`): one JSON line per message, then a payload of `bytes` bytes —
+the tile's samples as little-endian half floats, byte-shuffled (low bytes, then high bytes) and deflated:
+
+```text
+→ {"v":1,"token":"…","op":"hello"}
+← {"ok":true,"v":1,"device":"GPU: …","model":{"id":"…","version":"…","sha256":"…"},"tile":T}
+→ {"v":1,"token":"…","op":"run","model":"<sha256>","tile":T,"bytes":N}   + N bytes (4 planes of T × T cells)
+← {"ok":true,"tile":T,"bytes":N}                                        + N bytes (3 planes of 2T × 2T pixels)
+← {"ok":false,"error":"…"}
+```
+
 ## Commands and limits
 
 UI, CLI, control channel and MCP dispatch `denoise.toggle`, `denoise.settings`,
@@ -129,12 +181,3 @@ This implementation supports **Bayer RAW only**. X-Trans, Foveon, demosaiced DNG
 non-RAW images remain unsupported by this model contract. No measured quality parity
 with Lightroom is claimed. Apple/Metal and wider hardware verification, model policy,
 a linear-RGB contract and a side-by-side fidelity suite remain future work.
-
-## Integrated fork selection
-
-This sensor-data backend remains separate from [NAFNet RGB-stage denoise](denoise.md). A nonzero
-Amount without a model selection or an explicit RAW switch stays inactive. The RAW switch needs
-`denoise_on: true` and no RGB model selection. Enabling RAW clears an RGB selection only after
-sensor-model availability has been checked; one undo restores it. Applying NAFNet clears the RAW
-switch. Detail's eye bypasses either backend while retaining the saved settings. Catalog v4 reads
-both divergent v3 layouts and writes an integrated schema; older builds refuse it.

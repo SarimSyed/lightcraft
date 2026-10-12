@@ -46,7 +46,11 @@
 //! | 1 | up to v0.2.0 | |
 //! | 2 | after v0.2.0 | `Op::SetBrowsed`, `Catalog.browsed`, `Photo.local_baseline` |
 //! | 3 | fork or upstream | preset provenance (fork) or album order (upstream) |
-//! | 4 | integrated fork | both v3 schemas and explicit denoiser selection |
+//! | 4 | fork or upstream | combined v3 schemas (fork) or `Op::SetEmbeddedLens` (upstream) |
+//! | 5 | the keyword list | `Op::SetKeyword`, `Catalog.keyword_list` |
+//! | 6 | folder labels | `Op::SetFolderRecord`, `Catalog.folder_records` |
+//! | 7 | Kelvin white balance for raws whose camera has matrices (#730) | `Op::SetAsShotWb`, `WhiteBalance.scale` |
+//! | 8 | integrated fork | preset provenance and explicit RGB/Bayer denoiser selection |
 //!
 //! Rules:
 //! - **Bump [`VERSION`]** (and add a row above) in the change that adds an [`Op`] variant or a
@@ -71,7 +75,7 @@ pub const LOG: &str = "catalog.log";
 const FORMAT: &str = "lightcraft-catalog";
 /// The catalog format this build writes (and the newest it reads). See the module docs →
 /// *Format versions*; bump it whenever an [`Op`] variant or a serialized field is added.
-pub const VERSION: u32 = 4;
+pub const VERSION: u32 = 8;
 
 /// When [`Journal::wants_snapshot`] says it's time to compact the log.
 #[derive(Clone, Copy, Debug)]

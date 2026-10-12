@@ -1,7 +1,9 @@
 # Photo navigation
 
 Move the pointer over the photo and hold **Ctrl while scrolling** to zoom in or
-out. Zoom follows the pointer, with keyboard steps from 6–1600% and continuous gestures bounded by Fit–1600%. Native pinch and two-finger pan also work. The filmstrip, grid and editing panels
+out. Zoom follows the pointer, with keyboard steps from 6–1600% and continuous gestures bounded by Fit–1600%. Native pinch and two-finger pan also work. With the default Ctrl binding or None, a native
+notched mouse wheel also zooms smoothly without a modifier; alternative or disabled bindings
+retain their configured behaviour. The filmstrip, grid and editing panels
 keep their usual scrolling. Detail, full-screen preview, Compare and Reference
 support photo zoom; Compare keeps the two views synchronized.
 

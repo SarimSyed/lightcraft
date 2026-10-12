@@ -603,3 +603,14 @@ edit isolation, Amount without another inference, Before and Cancel. One batched
 physical Vulkan tests above. Native engine inspection and `ui.screenshot {headless:true}`
 also succeeded. The desktop session reported the native window as minimized before layout,
 so visible compositor drawing and native pointer interaction remain unverified in this run.
+
+## Upstream 0.7.1 integration (2026-10-12)
+
+Catalog format 8 reads both fork v3/v4 preset provenance and upstream catalogs through v7,
+retaining album ordering, folder labels, keywords and white-balance metadata. Older builds
+refuse the upgraded catalog. RGB and Bayer selections remain separate and undoable.
+
+The RGB decoded-source cache key advances to v13 for the upstream RAW/white-balance changes;
+old cached corrections require regeneration with installed weights. The NAFNet checkpoint,
+network processing revision and correction format are unchanged. Rendered previews use cache
+revision 62. Public model delivery and photographic quality parity remain open.

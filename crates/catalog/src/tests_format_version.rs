@@ -47,7 +47,7 @@ fn v1_library_loads_and_is_upgraded() {
     assert_eq!((r.replayed, r.upgraded_from), (1, None));
 }
 
-/// A library saved before albums could be ordered by hand opens as it was and is rewritten in the integrated format.
+/// A library saved before albums could be ordered by hand opens as it was and is rewritten in the current format.
 #[test]
 fn v2_library_loads_and_is_upgraded() {
     let (base, log, full) = legacy_parts();
@@ -57,6 +57,20 @@ fn v2_library_loads_and_is_upgraded() {
     let (_, c, r) = Journal::open(Box::new(m.clone())).unwrap();
     assert_eq!(c.to_snapshot(), full.to_snapshot());
     assert_eq!((r.replayed, r.upgraded_from), (1, Some(2)));
+    assert_eq!(snapshot_version(&m), u64::from(VERSION));
+}
+
+/// A library saved before keywords could be listed on their own opens as it was and is rewritten
+/// in the current format.
+#[test]
+fn v3_library_loads_and_is_upgraded() {
+    let (base, log, full) = legacy_parts();
+    let m = MemStore::new();
+    m.set(SNAPSHOT, format!("{{\"format\":\"lightcraft-catalog\",\"version\":3,\"seq\":2,\"catalog\":{}}}\n", base.to_snapshot()).into_bytes());
+    m.set(LOG, log.into_bytes());
+    let (_, c, r) = Journal::open(Box::new(m.clone())).unwrap();
+    assert_eq!(c.to_snapshot(), full.to_snapshot());
+    assert_eq!((r.replayed, r.upgraded_from), (1, Some(3)));
     assert_eq!(snapshot_version(&m), u64::from(VERSION));
 }
 
@@ -193,9 +207,56 @@ fn op_variants_are_versioned() {
             | Op::Batch { .. } => 1,
             Op::SetBrowsed { .. } => 2,
             Op::SetAlbumOrder { .. } => 3,
+            Op::SetEmbeddedLens { .. } => 4,
+            Op::SetKeyword { .. } => 5,
+            Op::SetFolderRecord { .. } => 6,
+            Op::SetAsShotWb { .. } => 7,
         }
     }
-    let newest = since(&Op::SetBrowsed { folder: String::new(), at: None });
-    // Fields also advance the format (v3 adds HistoryStep.preset without a new Op variant).
-    assert!(newest <= VERSION, "every op must be covered by the current format version");
+    let newest = since(&Op::SetAsShotWb { id: PhotoId(1), wb: None });
+    assert!(newest <= VERSION, "all ops are covered; fork fields also advance the catalog format");
+}
+
+/// Both fork v3/v4 preset history and upstream v7 fields survive the integrated upgrade and reopen.
+#[test]
+fn fork_and_upstream_catalogs_upgrade_without_losing_saved_state() {
+    use std::sync::Arc;
+    for version in [3, 4, 7] {
+        let mut c = Catalog::new();
+        let id = c.alloc_photo_id();
+        let mut p = Photo::new(id, Source::File { path: "/photos/test.nef".into() }, "test.nef", "NEF", 4, 3, "2026-10-12");
+        if version < 7 {
+            let mut settings = lightcraft_develop::DevelopSettings::default();
+            settings.enhance.model = Some(lightcraft_develop::DenoiseModel {
+                id: "nafnet-sidd-width32".into(),
+                checkpoint: "digest".into(),
+                processing_revision: "revision".into(),
+            });
+            settings.enhance.denoise = 65.0;
+            p.develop = Arc::new(settings);
+            p.history.push(HistoryStep {
+                label: "Preset with manual edits".into(),
+                settings: p.develop.clone(),
+                preset: Some(PresetEdit { without: Arc::new(lightcraft_develop::DevelopSettings::default()), last: None, incomplete: false }),
+            });
+        }
+        c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        let mut album = Album::new(c.alloc_album_id(), "Ordered album");
+        album.order = Some(2);
+        c.apply(Op::AddAlbum { album }).unwrap();
+        if version == 7 {
+            c.apply(Op::SetFolderRecord { folder: "/photos".into(), record: Some(FolderRecord { label: Some(ColorLabel::Red) }) }).unwrap();
+        }
+        let expected = c.to_snapshot();
+        let store = MemStore::new();
+        store.set(SNAPSHOT, format!("{{\"format\":\"lightcraft-catalog\",\"version\":{version},\"seq\":0,\"catalog\":{expected}}}\n").into_bytes());
+        let (journal, loaded, report) = Journal::open(Box::new(store.clone())).unwrap();
+        assert_eq!(report.upgraded_from, Some(version));
+        assert_eq!(snapshot_version(&store), u64::from(VERSION));
+        assert_eq!(loaded.to_snapshot(), expected, "v{version}: saved edits and organization survive");
+        drop(journal);
+        let (_, reopened, report) = Journal::open(Box::new(store)).unwrap();
+        assert_eq!(report.upgraded_from, None);
+        assert_eq!(reopened.to_snapshot(), expected, "v{version}: upgraded state survives reopening");
+    }
 }

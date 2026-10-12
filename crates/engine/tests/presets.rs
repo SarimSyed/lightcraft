@@ -218,7 +218,7 @@ fn reopening_either_v3_schema_preserves_preset_removal_and_album_order() {
             .unwrap();
         assert_eq!(report.upgraded_from, Some(3), "{schema} schema must be upgraded before edits");
         let snap: serde_json::Value = serde_json::from_slice(&store.get(SNAPSHOT).unwrap()).unwrap();
-        assert_eq!(snap["version"], 4, "older divergent builds must refuse the merged catalog");
+        assert_eq!(snap["version"], lightcraft_engine::catalog::journal::VERSION, "older divergent builds must refuse the merged catalog");
         reopened.execute("library.select", &json!({"ids":[id.0]})).unwrap();
         if schema == "fork" {
             reopened.execute("preset.remove", &json!({})).unwrap();
