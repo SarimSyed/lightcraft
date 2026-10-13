@@ -258,3 +258,36 @@ fn a_preset_applied_at_import_keeps_its_amount_and_removal_provenance() {
     assert_eq!(std::fs::read(path).unwrap(), bytes);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn removing_a_preset_at_an_earlier_history_step_keeps_that_steps_manual_edits() {
+    let mut s = Session::with_demo();
+    let id = s.active().unwrap();
+    s.execute("develop.set", &json!({"control":"light.exposure","value":0.25})).unwrap();
+    s.execute("preset.apply", &json!({"id":"lc.bw-high-contrast"})).unwrap();
+    let at = s.catalog.photo(id).unwrap().history.len() - 1;
+    s.execute("develop.set", &json!({"control":"light.exposure","value":0.8})).unwrap();
+    s.execute("history.restore", &json!({"index":at})).unwrap();
+    s.execute("preset.remove", &json!({})).unwrap();
+    assert_eq!(s.develop_of(id).unwrap().light.exposure, 0.25, "future manual edits do not belong to the restored step");
+    assert_eq!(s.develop_of(id).unwrap().treatment, lightcraft_develop::Treatment::Color);
+    assert_eq!(s.catalog.photo(id).unwrap().history_cursor, None);
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(s.catalog.photo(id).unwrap().history_cursor, Some(at));
+    assert_eq!(s.develop_of(id).unwrap().treatment, lightcraft_develop::Treatment::Bw);
+}
+
+#[test]
+fn a_step_before_a_preset_does_not_report_that_future_preset_as_applied() {
+    let mut s = Session::with_demo();
+    let id = s.active().unwrap();
+    s.execute("develop.set", &json!({"control":"light.exposure","value":0.25})).unwrap();
+    let at = s.catalog.photo(id).unwrap().history.len() - 1;
+    s.execute("preset.apply", &json!({"id":"lc.bw-high-contrast"})).unwrap();
+    s.execute("history.restore", &json!({"index":at})).unwrap();
+    assert_eq!(s.execute("preset.status", &json!({})).unwrap()["removable"], false);
+    s.execute("history.clear", &json!({})).unwrap();
+    assert_eq!(s.catalog.photo(id).unwrap().history_cursor, None);
+    assert_eq!(s.execute("preset.status", &json!({})).unwrap()["removable"], false);
+    assert_eq!(s.develop_of(id).unwrap().light.exposure, 0.25);
+}

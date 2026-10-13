@@ -42,7 +42,9 @@ pub(crate) fn carry(before: &DevelopSettings, after: &DevelopSettings, without: 
 }
 
 pub(crate) fn state(photo: &Photo) -> Option<PresetEdit> {
-    if let Some(step) = photo.history.last() {
+    // Future steps remain listed after history navigation but do not belong to the current edit.
+    let current = photo.history_index().and_then(|i| photo.history.get(..=i)).unwrap_or_default();
+    if let Some(step) = current.last() {
         if let Some(preset) = &step.preset {
             return Some(preset.clone());
         }
@@ -50,8 +52,8 @@ pub(crate) fn state(photo: &Photo) -> Option<PresetEdit> {
             return None;
         }
     }
-    let start = photo.history.iter().rposition(|h| h.label == "Reset" || h.label == "Remove Preset Effects").unwrap_or(0);
-    let history = photo.history.get(start..).unwrap_or_default();
+    let start = current.iter().rposition(|h| h.label == "Reset" || h.label == "Remove Preset Effects").unwrap_or(0);
+    let history = current.get(start..).unwrap_or_default();
     let mut without = photo.camera_defaults();
     let mut previous = photo.import_defaults();
     let mut found = photo.import_look.is_some();

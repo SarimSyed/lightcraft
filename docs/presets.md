@@ -16,7 +16,9 @@ presets, use Remove Preset Effects. Clicking a preset in the editor affects only
 even when several photos remain selected in Compare or Survey. Batch application remains available
 through `preset.apply` with explicit `ids`; Auto Sync and copy/paste are explicit multi-photo actions.
 
-Preset provenance is saved with each photo's history in catalog format 8 (with migration from either version 3 layout). Reopening, trimming history,
+Preset provenance is saved with each photo's history in catalog format 9, including migration from
+both fork and upstream catalog layouts. History navigation uses only steps through the current
+position; later retained steps do not affect Amount or removal. Reopening, trimming history,
 clearing history and virtual copies retain it. Reset returns to import defaults, including an import
 preset if one was configured. Removal also supports import defaults while preserving subsequent edits.
 

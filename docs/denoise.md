@@ -614,3 +614,27 @@ The RGB decoded-source cache key advances to v13 for the upstream RAW/white-bala
 old cached corrections require regeneration with installed weights. The NAFNet checkpoint,
 network processing revision and correction format are unchanged. Rendered previews use cache
 revision 62. Public model delivery and photographic quality parity remain open.
+
+## Upstream History integration (2026-10-13)
+
+Catalog format 9 reads both fork and upstream v8 layouts, preserving preset provenance,
+RGB model selections and the History cursor. Preset Amount and removal use the current
+history position; retained future steps no longer supply manual overrides or preset state.
+The panel uses upstream's virtualized preset list and grouped picker with one persisted,
+photo-local Amount implementation.
+
+The decoded-source cache key advances to v14 for upstream RAW framing changes, including
+the measured Nikon D7100 14-bit image area. Existing RGB corrections require regeneration
+with installed weights. Rendered previews use revision 63. The NAFNet checkpoint, network
+processing revision and correction format are unchanged.
+
+Integration validation retains the unchanged D7100 colour/lightness regression ceilings: all
+four corpus modes pass, with mean CIE76 12.33 / 9.01 / 11.49 / 9.07 for lossless12 /
+lossless14 / lossy12 / lossy14. The corrected 14-bit frame renders at 1200 × 800, while
+12-bit remains 1200 × 799. Exposure still changes exported pixels and the source NEFs
+remain byte-identical. These measurements are against the camera JPEG, not Lightroom parity.
+
+All eight `cargo xtask ci` gates pass. Headless demo snapshots cover presets, classical
+noise reduction, curves, navigation and all-mask overlays; a native demo session reports
+Radeon RX 9060 XT Vulkan rendering without CPU fallback. This integration run does not
+repeat the real-checkpoint photographic comparison or establish OS input acceptance.

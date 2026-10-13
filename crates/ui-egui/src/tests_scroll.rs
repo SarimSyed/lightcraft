@@ -305,3 +305,25 @@ fn legacy_navigation_keys_and_the_general_shortcut_editor_share_one_keymap() {
     let restored = serde_json::from_str::<crate::UiState>(&saved).unwrap().sanitized();
     assert_eq!(crate::shortcuts::shortcut_of(&restored.settings.keymap, "view.zoomIn"), Some("Cmd+="));
 }
+
+/// A mouse wheel notch (a line) scrolls `theme::WHEEL_LINE_POINTS`, not egui's default 40: long
+/// panels took 50+ notches.
+#[test]
+fn a_wheel_notch_scrolls_a_hundred_points() {
+    let mut h = demo("photoGrid");
+    let canvas = h.app.canvas_rect.expect("grid canvas");
+    h.request("ui.move", json!({"x": canvas.center().x, "y": canvas.center().y}), T);
+    let y0 = grid_y(&h);
+    for _ in 0..3 {
+        h.events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, -1.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        h.step();
+    }
+    idle(&mut h, 120);
+    let moved = grid_y(&h) - y0;
+    assert!(moved >= 3.0 * crate::theme::WHEEL_LINE_POINTS - 1.0, "three notches scrolled {moved} points");
+}

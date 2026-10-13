@@ -211,21 +211,22 @@ fn op_variants_are_versioned() {
             Op::SetKeyword { .. } => 5,
             Op::SetFolderRecord { .. } => 6,
             Op::SetAsShotWb { .. } => 7,
+            Op::SetHistoryCursor { .. } => 8,
         }
     }
-    let newest = since(&Op::SetAsShotWb { id: PhotoId(1), wb: None });
+    let newest = since(&Op::SetHistoryCursor { id: PhotoId(1), cursor: None });
     assert!(newest <= VERSION, "all ops are covered; fork fields also advance the catalog format");
 }
 
-/// Both fork v3/v4 preset history and upstream v7 fields survive the integrated upgrade and reopen.
+/// Fork and upstream catalogs, including both v8 layouts, retain their saved state on upgrade.
 #[test]
 fn fork_and_upstream_catalogs_upgrade_without_losing_saved_state() {
     use std::sync::Arc;
-    for version in [3, 4, 7] {
+    for (version, fork) in [(3, true), (4, true), (7, false), (8, true), (8, false)] {
         let mut c = Catalog::new();
         let id = c.alloc_photo_id();
         let mut p = Photo::new(id, Source::File { path: "/photos/test.nef".into() }, "test.nef", "NEF", 4, 3, "2026-10-12");
-        if version < 7 {
+        if fork {
             let mut settings = lightcraft_develop::DevelopSettings::default();
             settings.enhance.model = Some(lightcraft_develop::DenoiseModel {
                 id: "nafnet-sidd-width32".into(),
@@ -240,11 +241,18 @@ fn fork_and_upstream_catalogs_upgrade_without_losing_saved_state() {
                 preset: Some(PresetEdit { without: Arc::new(lightcraft_develop::DevelopSettings::default()), last: None, incomplete: false }),
             });
         }
+        if version == 8 && !fork {
+            p.history = vec![
+                HistoryStep { label: "Imported".into(), settings: p.develop.clone(), preset: None },
+                HistoryStep { label: "Future edit".into(), settings: p.develop.clone(), preset: None },
+            ];
+            p.history_cursor = Some(0);
+        }
         c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
         let mut album = Album::new(c.alloc_album_id(), "Ordered album");
         album.order = Some(2);
         c.apply(Op::AddAlbum { album }).unwrap();
-        if version == 7 {
+        if version >= 7 {
             c.apply(Op::SetFolderRecord { folder: "/photos".into(), record: Some(FolderRecord { label: Some(ColorLabel::Red) }) }).unwrap();
         }
         let expected = c.to_snapshot();

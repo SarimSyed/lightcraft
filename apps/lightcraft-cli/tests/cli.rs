@@ -445,7 +445,9 @@ fn corpus_d7100_cli_renders_plausible_colour_and_keeps_exposure_editable() {
         let (ok, stdout, stderr) = run_process_bounded(mode, &["render", path.to_str().unwrap(), "-o", out.to_str().unwrap(), "--size", "1200"]);
         assert!(ok, "D7100 {mode}: {stdout}; {stderr}");
         let decoded = lightcraft_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
-        assert_eq!((decoded.width, decoded.height), (1200, 799));
+        // Upstream's measured 14-bit image area is 6000×4000; 12-bit keeps the full sensor area.
+        let expected = if mode.ends_with("14") { (1200, 800) } else { (1200, 799) };
+        assert_eq!((decoded.width, decoded.height), expected, "D7100 {mode}: image area");
         let render = decoded.to_srgb8();
         let reference = lightcraft_engine::files::embedded_preview_srgb(&bytes, 384).unwrap();
         let small = |img: &lightcraft_raster::Rgba8| resize(&img.to_linear(), 200, 133, Filter::Box).to_srgb8();
@@ -718,6 +720,28 @@ fn connect_failure_hint_names_the_attempted_port() {
     assert!(!ok);
     assert!(err.contains("--control 18437"), "the hint must name the port it tried: {err}");
     assert!(!err.contains("--control 7980"), "{err}");
+}
+
+/// Issue #1178: `--connect 7980 ui.inspect` (after `lightcraft --control 7980`) was leaving
+/// `7980` unconsumed so it parsed as a command id and produced "unknown command `7980`".
+/// A bare port is now taken as `127.0.0.1:<port>`; the same address used with `:port` still
+/// works; non-numeric, non-`ADDR`-shaped tokens (e.g. a real command id) keep falling through.
+#[test]
+fn connect_bare_port_is_treated_as_loopback_port() {
+    // Bare port: the failure hint names that port.
+    let (ok, _lines, err) = run_cli(&["--connect", "18437", "ui.inspect"], None);
+    assert!(!ok);
+    assert!(err.contains("--control 18437"), "bare port must reach the hint: {err}");
+    assert!(!err.contains("--control 7980"), "{err}");
+    // `<host>:<port>` still works (issue #167 case).
+    let (ok, _lines, err) = run_cli(&["--connect", "127.0.0.1:18437", "ui.inspect"], None);
+    assert!(!ok);
+    assert!(err.contains("--control 18437"), "{err}");
+    // `--connect=<bare-port>` already worked (the `a.starts_with("--connect=")` arm); spot-check
+    // the hint matches its port too.
+    let (ok, _lines, err) = run_cli(&["--connect=18437", "ui.inspect"], None);
+    assert!(!ok);
+    assert!(err.contains("--control 18437"), "{err}");
 }
 
 /// The CLI logs warnings on stderr (#168): with `RUST_LOG=warn` an unknown GPU backend name is

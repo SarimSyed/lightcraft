@@ -67,7 +67,7 @@ impl SourceResolver {
         };
         Ok(format!(
             "{:x}",
-            Sha256::digest(serde_json::to_vec(&(digest, "oriented-full-rec2020-decoder-v13", self.calibration, model)).map_err(|e| e.to_string())?)
+            Sha256::digest(serde_json::to_vec(&(digest, "oriented-full-rec2020-decoder-v14", self.calibration, model)).map_err(|e| e.to_string())?)
         ))
     }
     fn paths(&self, key: &str) -> (PathBuf, PathBuf) {
