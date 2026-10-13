@@ -665,3 +665,77 @@ fn denoise_serve_runs_tiles_for_another_computer() {
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&models);
 }
+
+fn run_cli_bounded(tag: &str, args: &[&str]) -> (bool, Vec<Value>, String) {
+    let (ok, out, err) = run_process_bounded(tag, &[&["run"], args].concat());
+    let lines = out.lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    (ok, lines, err)
+}
+
+fn run_process_bounded(tag: &str, args: &[&str]) -> (bool, String, String) {
+    let stdout = tmp(&format!("{tag}.stdout"));
+    let stderr = tmp(&format!("{tag}.stderr"));
+    let mut child = Command::new(BIN)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(std::fs::File::create(&stdout).unwrap())
+        .stderr(std::fs::File::create(&stderr).unwrap())
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    let mut timed_out = false;
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if start.elapsed() >= std::time::Duration::from_secs(10) {
+            timed_out = true;
+            let _ = child.kill();
+            break child.wait().unwrap();
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let out = std::fs::read_to_string(&stdout).unwrap();
+    let err = std::fs::read_to_string(&stderr).unwrap();
+    std::fs::remove_file(stdout).unwrap();
+    std::fs::remove_file(stderr).unwrap();
+    assert!(!timed_out, "{tag} exceeded 10 s and was killed/reaped; stdout: {out}; stderr: {err}");
+    (status.success(), out, err)
+}
+
+#[cfg(unix)]
+#[test]
+fn overlapping_photo_roots_are_walked_once_and_keep_the_first_path() {
+    let dir = tmp("overlapping-photo-roots");
+    let real = dir.join("real");
+    let alias = dir.join("alias");
+    std::fs::create_dir_all(&real).unwrap();
+    std::os::unix::fs::symlink("real", &alias).unwrap();
+    gradient_png(&real.join("photo.png"));
+    let paths = format!("paths={}", json!([alias, real, dir]));
+    let (ok, lines, err) = run_cli_bounded("overlapping-photo-roots", &["library.import", &paths, "library.info"]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[0]["result"]["imported"].as_array().unwrap().len(), 1);
+    assert_eq!(lines[0]["result"]["duplicates"], json!([]), "a repeated root is not a second import candidate");
+    assert_eq!(lines[1]["result"]["photos"], 1);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn overlapping_preset_roots_import_once_and_keep_the_first_path() {
+    let dir = tmp("overlapping-preset-roots");
+    let real = dir.join("real");
+    let alias = dir.join("alias");
+    std::fs::create_dir_all(&real).unwrap();
+    std::os::unix::fs::symlink("real", &alias).unwrap();
+    std::fs::write(real.join("look.lrtemplate"), r#"return { title = "Linked Look", value = { settings = { Exposure2012 = 0.5 } } }"#).unwrap();
+    let paths = format!("paths={}", json!([alias, real, dir, alias.join("look.lrtemplate")]));
+    let (ok, lines, err) = run_cli_bounded("overlapping-preset-roots", &["preset.import", &paths, "dryRun=true"]);
+    assert!(ok, "{err}");
+    let imported = lines[0]["result"]["imported"].as_array().unwrap();
+    assert_eq!(imported.len(), 1, "{imported:?}");
+    assert_eq!(imported[0]["file"], alias.join("look.lrtemplate").to_string_lossy().as_ref());
+    assert_eq!(lines[0]["result"]["failed"], json!([]));
+    std::fs::remove_dir_all(dir).unwrap();
+}

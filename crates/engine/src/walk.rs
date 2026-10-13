@@ -50,14 +50,19 @@ fn hidden(p: &Path) -> bool {
 /// The files below folder `root` that `keep` accepts. Hidden entries (names starting with `.`)
 /// are left out, the folder `skip` (e.g. the library's own) is never entered, and the walk stops
 /// at `limits` (see [`Walked::truncated`]). Unreadable folders are skipped.
-pub fn files_in(root: &Path, skip: Option<&Path>, limits: Limits, mut keep: impl FnMut(&Path) -> bool) -> Walked {
+pub fn files_in(root: &Path, skip: Option<&Path>, limits: Limits, keep: impl FnMut(&Path) -> bool) -> Walked {
+    files_in_with_seen(root, skip, limits, keep, &mut HashSet::new())
+}
+
+/// Share canonical folder identities across roots in a single import request; preserve the first path spelling.
+pub(crate) fn files_in_with_seen(
+    root: &Path,
+    skip: Option<&Path>,
+    limits: Limits,
+    mut keep: impl FnMut(&Path) -> bool,
+    seen: &mut HashSet<PathBuf>,
+) -> Walked {
     let mut out = Walked::default();
-    // canonical folders reached through a link, so a link loop is walked at most once
-    let mut linked: HashSet<PathBuf> = HashSet::new();
-    if let Ok(c) = std::fs::canonicalize(root) {
-        linked.insert(c);
-    }
-    // Include aliases to the library in the exclusion, not just its lexical path.
     let skip_canonical = skip.and_then(|p| std::fs::canonicalize(p).ok());
     // (path, depth of the folder it is in, is a folder); popped in path order
     let mut stack: Vec<(PathBuf, usize, bool)> = vec![(root.to_path_buf(), 0, true)];
@@ -69,6 +74,14 @@ pub fn files_in(root: &Path, skip: Option<&Path>, limits: Limits, mut keep: impl
             continue;
         }
         if skip.is_some_and(|s| path == s) || skip_canonical.as_ref().is_some_and(|s| std::fs::canonicalize(&path).is_ok_and(|p| p.starts_with(s))) {
+            continue;
+        }
+        let Ok(real) = std::fs::canonicalize(&path) else { continue };
+        if seen.len() >= MAX_ENTRIES && !seen.contains(&real) {
+            out.truncated = true;
+            break;
+        }
+        if !seen.insert(real) {
             continue;
         }
         if depth >= limits.max_depth {
@@ -90,16 +103,7 @@ pub fn files_in(root: &Path, skip: Option<&Path>, limits: Limits, mut keep: impl
             let Ok(ft) = e.file_type() else { continue };
             let dir = if ft.is_symlink() {
                 // a link (or a Windows junction): a folder is entered once, a file is a file
-                match std::fs::metadata(&p) {
-                    Ok(m) if m.is_dir() => {
-                        let Ok(c) = std::fs::canonicalize(&p) else { continue };
-                        if !linked.insert(c) {
-                            continue;
-                        }
-                        true
-                    }
-                    _ => false,
-                }
+                matches!(std::fs::metadata(&p), Ok(m) if m.is_dir())
             } else {
                 ft.is_dir()
             };

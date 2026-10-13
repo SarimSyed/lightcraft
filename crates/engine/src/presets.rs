@@ -153,6 +153,10 @@ pub fn parse_preset_file(name: &str, bytes: &[u8]) -> Result<Vec<Preset>, String
 /// Expand files/folders (recursively, bounded: see [`crate::walk`]) into preset files
 /// (`.lcpreset`, `.xmp`).
 pub fn expand_preset_paths(paths: &[String]) -> Vec<String> {
+    expand_preset_paths_with_seen(paths, &mut std::collections::HashSet::new())
+}
+
+pub(crate) fn expand_preset_paths_with_seen(paths: &[String], seen: &mut std::collections::HashSet<std::path::PathBuf>) -> Vec<String> {
     let preset_file = |p: &Path| {
         let ext = p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
         ext == LCPRESET_EXT || ["xmp", "lrtemplate", "zip", "lmp", "mplumpack"].contains(&ext.as_str())
@@ -161,12 +165,13 @@ pub fn expand_preset_paths(paths: &[String]) -> Vec<String> {
     for p in paths {
         let path = Path::new(p);
         if path.is_dir() {
-            let w = crate::walk::files_in(path, None, crate::walk::Limits::default(), preset_file);
+            let w = crate::walk::files_in_with_seen(path, None, crate::walk::Limits::default(), preset_file, seen);
             out.extend(w.files.into_iter().map(|f| f.to_string_lossy().to_string()));
         } else {
             out.push(p.clone());
         }
     }
+    out.retain(|p| std::fs::canonicalize(p).map_or(true, |real| seen.insert(real)));
     out
 }
 

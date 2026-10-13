@@ -382,13 +382,15 @@ pub fn expand(paths: &[String], skip: Option<&Path>) -> Vec<String> {
 pub fn expand_within(paths: &[String], skip: Option<&Path>, limits: crate::walk::Limits) -> (Vec<String>, bool) {
     let mut out = Vec::new();
     let mut truncated = false;
+    let mut seen = std::collections::HashSet::new();
+    let skipped = skip.and_then(|p| std::fs::canonicalize(p).ok());
     for p in paths {
         let p = Path::new(p);
-        if skip.is_some_and(|s| p == s) {
+        if skip.is_some_and(|s| p == s) || skipped.as_ref().is_some_and(|s| std::fs::canonicalize(p).as_ref().ok() == Some(s)) {
             continue;
         }
         if p.is_dir() {
-            let w = crate::walk::files_in(p, skip, limits, is_supported);
+            let w = crate::walk::files_in_with_seen(p, skip, limits, is_supported, &mut seen);
             if w.truncated {
                 log::warn!(
                     "import: stopped looking in {} after {} entries (limits: {} entries, {} folder levels)",

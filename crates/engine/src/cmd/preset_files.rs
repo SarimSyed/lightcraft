@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, cmd, str_param};
 use crate::preset_import::{group_from_dir, read_presets};
-use crate::presets::{LCPRESET_EXT, expand_preset_paths, to_lcpreset};
+use crate::presets::{LCPRESET_EXT, expand_preset_paths_with_seen, to_lcpreset};
 use crate::{Result, Session};
 
 fn strings(p: &Value, key: &str) -> Option<Vec<String>> {
@@ -18,9 +18,10 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
     let mut imported = Vec::new();
     let mut failed = Vec::new();
     let mut skipped = 0usize;
+    let mut seen_dirs = std::collections::HashSet::new();
     for top in &paths {
         let from_dir = std::path::Path::new(top).is_dir();
-        for f in expand_preset_paths(std::slice::from_ref(top)) {
+        for f in expand_preset_paths_with_seen(std::slice::from_ref(top), &mut seen_dirs) {
             // presets in a folder go to a group named after it (unless the file names its own)
             // the path from the imported folder (inclusive) to the file's folder
             let base = std::path::Path::new(top).parent().unwrap_or(std::path::Path::new(""));
