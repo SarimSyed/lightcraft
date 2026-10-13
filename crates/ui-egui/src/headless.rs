@@ -954,6 +954,56 @@ mod tests {
         assert_eq!(diff, 0, "{diff} pixels differ between two runs");
     }
 
+    #[test]
+    fn survey_thumbnail_clicks_add_and_activate_without_losing_the_group() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().map(|id| id.0).collect();
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [ids[0]]}}), t);
+        let reply = h.request("ui.clickWidget", json!({"id": "icon:survey"}), t);
+        assert_eq!(reply["ok"], true, "{reply}");
+        for id in &ids[1..4] {
+            h.request("ui.clickWidget", json!({"id": format!("film:{id}")}), t);
+        }
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!(ids[..4]));
+        let tiles = h.request("ui.widgets", json!({"filter": "cull:"}), t)["result"].clone();
+        let displayed: Vec<_> = tiles.as_array().unwrap().iter().map(|tile| tile["id"].as_str().unwrap().to_owned()).collect();
+        assert_eq!(displayed, ids[..4].iter().map(|id| format!("cull:{id}")).collect::<Vec<_>>());
+        // Revisiting a selected thumbnail activates it without collapsing the survey.
+        h.request("ui.clickWidget", json!({"id": format!("film:{}", ids[1])}), t);
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!(ids[..4]));
+        assert_eq!(state["active"], ids[1]);
+        h.request("ui.clickWidget", json!({"id":format!("film:{}",ids[3]),"cmd":true}), t);
+        assert_eq!(h.request("ui.inspect", json!({}), t)["result"]["selection"], json!(ids[..3]));
+        h.request("ui.clickWidget", json!({"id":format!("film:{}",ids[4]),"shift":true}), t);
+        assert_eq!(h.request("ui.inspect", json!({}), t)["result"]["selection"], json!(ids[..5]));
+        h.settle(SETTLE);
+    }
+
+    #[test]
+    fn survey_remove_click_keeps_the_other_photos() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().map(|id| id.0).collect();
+        h.request("engine.execute", json!({"command":"library.select", "params":{"ids":ids[..3]}}), t);
+        h.request("ui.set", json!({"view":"survey"}), t);
+        h.settle(SETTLE);
+        let widget = format!("cull:{}", ids[1]);
+        h.request("ui.hoverWidget", json!({"id":widget}), t);
+        let widgets = h.request("ui.widgets", json!({"filter":widget}), t)["result"].clone();
+        let rect = &widgets[0]["rect"];
+        // The close control sits at the displayed photo's top-right corner.
+        let x = rect[0].as_f64().unwrap() + rect[2].as_f64().unwrap() - 16.0;
+        let y = rect[1].as_f64().unwrap() + 16.0;
+        let reply = h.request("ui.click", json!({"x":x,"y":y}), t);
+        assert_eq!(reply["ok"], true, "{reply}");
+        let state = h.request("ui.inspect", json!({}), t)["result"].clone();
+        assert_eq!(state["selection"], json!([ids[0], ids[2]]));
+        h.settle(SETTLE);
+    }
+
     /// Keyboard culling: Compare (rating keys hit the candidate, arrows move it, auto-advance),
     /// Survey (keys hit the active photo only), and auto-advance in Detail.
     #[test]

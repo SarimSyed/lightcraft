@@ -2344,6 +2344,9 @@ pub(crate) fn filmstrip(app: &mut LightcraftApp, ui: &mut egui::Ui, r: Rect) {
                     "toggle"
                 } else if m.shift {
                     "range"
+                } else if app.ui.view == crate::state::ViewMode::Survey {
+                    // Keep the surveyed group; an existing thumbnail only becomes active.
+                    "add"
                 } else {
                     "replace"
                 };
