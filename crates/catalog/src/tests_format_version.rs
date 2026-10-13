@@ -215,5 +215,29 @@ fn op_variants_are_versioned() {
         }
     }
     let newest = since(&Op::SetHistoryCursor { id: PhotoId(1), cursor: None });
-    assert_eq!(newest, VERSION, "the newest op's version must be the current format version");
+    assert!(newest <= VERSION, "all ops are versioned; serialized fields also advance the format");
+}
+
+#[test]
+fn v8_history_loads_without_preset_metadata_and_upgrades_safely() {
+    use std::sync::Arc;
+    let mut catalog = Catalog::new();
+    let id = catalog.alloc_photo_id();
+    let mut photo = Photo::new(id, Source::File { path: "/photos/test.jpg".into() }, "test.jpg", "JPEG", 4, 3, "2026-10-13");
+    let mut settings = lightcraft_develop::DevelopSettings::default();
+    settings.light.exposure = 0.75;
+    photo.develop = Arc::new(settings);
+    photo.history.push(HistoryStep { label: "Exposure".into(), settings: photo.develop.clone(), preset: None });
+    catalog.apply(Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+    let expected = catalog.to_snapshot();
+    let store = MemStore::new();
+    store.set(SNAPSHOT, format!("{{\"format\":\"lightcraft-catalog\",\"version\":8,\"seq\":0,\"catalog\":{expected}}}\n").into_bytes());
+    let (journal, loaded, report) = Journal::open(Box::new(store.clone())).unwrap();
+    assert_eq!(report.upgraded_from, Some(8));
+    assert_eq!(snapshot_version(&store), u64::from(VERSION));
+    assert_eq!(loaded.to_snapshot(), expected);
+    drop(journal);
+    let (_, reopened, report) = Journal::open(Box::new(store)).unwrap();
+    assert_eq!(report.upgraded_from, None);
+    assert_eq!(reopened.to_snapshot(), expected);
 }

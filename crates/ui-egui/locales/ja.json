@@ -1961,5 +1961,9 @@
   "Adding to Apple Photos": "Appleの写真に追加中",
   "No graphics processor found: LightCraft renders on the CPU, which is much slower. Details in Help → System Info.": "グラフィックプロセッサが見つかりません。LightCraftはCPUで描画するため、かなり遅くなります。詳細は「ヘルプ → システム情報」を参照してください。",
   "On NixOS, start it from `nix develop`.": "NixOSでは `nix develop` から起動してください。",
-  "Files with the same content as another file in this import: only the first is imported.": "この読み込み内の別のファイルと内容が同じファイルです。最初のファイルだけが読み込まれます。"
+  "Files with the same content as another file in this import: only the first is imported.": "この読み込み内の別のファイルと内容が同じファイルです。最初のファイルだけが読み込まれます。",
+  "Remove Preset Effects": "プリセットの効果を解除",
+  "Remove presets from this photo; keep manual edits.": "この写真のプリセットを解除し、手動編集は保持します。",
+  "Preset effects removed; manual edits kept.": "プリセットの効果を解除し、手動編集を保持しました。",
+  "Older preset history is incomplete. Restore a pre-preset version or undo the preset.": "古いプリセットの履歴が不足しています。適用前のバージョンを復元するか、適用を取り消してください。"
 }
