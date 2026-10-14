@@ -638,3 +638,12 @@ All eight `cargo xtask ci` gates pass. Headless demo snapshots cover presets, cl
 noise reduction, curves, navigation and all-mask overlays; a native demo session reports
 Radeon RX 9060 XT Vulkan rendering without CPU fallback. This integration run does not
 repeat the real-checkpoint photographic comparison or establish OS input acceptance.
+
+### Upstream refresh, 2026-10-14
+
+The integration through `3b4279fc2485bb51847c0071a1b3c514aa0f98f4` keeps the same NAFNet weights,
+tiling and Amount blend. Decoder revision 15 separates results from the previous decoder,
+including the corrected reading of older LightCraft DNG CFA patterns. Existing revision-14
+results remain on disk and need verified weights to regenerate; saved selections are retained.
+The interrupted RawNIND comparison requested an oversized export in its development harness
+and completed no matched comparison; its timing and memory figures are not denoise benchmarks.

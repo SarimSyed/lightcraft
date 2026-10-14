@@ -576,6 +576,8 @@ pub(crate) fn prepare(
 /// The airlight of the whole output frame, estimated on a small render of it (`proxy_w` px wide):
 /// a windowed render must dehaze with the frame's airlight, not that of the pixels it holds.
 pub(crate) fn frame_airlight(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, frame: &Frame, proxy_w: usize, proxy_h: usize) -> f32 {
+    // Sparse pixel fingerprints cannot identify a source: two photos can share
+    // those samples. Recompute until the caller can supply a stable source identity.
     let mut img = frame.sample(src, proxy_w, proxy_h);
     white_balance(&mut img, info, s);
     let sigma = (0.02 * frame.px_per_long(proxy_w)).max(1.0) as f32;

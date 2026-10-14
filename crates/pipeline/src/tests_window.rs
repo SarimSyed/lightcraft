@@ -133,6 +133,29 @@ fn spatial_adjustments_agree_inside_the_halo() {
     }
 }
 
+// Switching photos must not change the Dehaze airlight of a zoomed view.
+#[test]
+fn dehaze_window_is_independent_of_the_previous_photo() {
+    let (w, h) = (800, 600);
+    let previous = Rgb32f::from_fn(w, h, |_, _| [0.1; 3]);
+    let mut current = Rgb32f::from_fn(w, h, |_, _| [0.7; 3]);
+    // Distinct sources can agree at a sparse set of pixels. Such agreement is
+    // insufficient to identify a photo or reuse its derived pixels.
+    for i in 0..512usize {
+        let at = (i.wrapping_mul(2_654_435_761) ^ i) % (w * h);
+        current.data[at] = [0.1; 3];
+    }
+    let mut settings = DevelopSettings::default();
+    controls::set(&mut settings, "effects.dehaze", 70.0);
+    let at = PixelWindow { x: 180, y: 160, w: 300, h: 230 };
+    let request = RenderRequest { window: Some(at), ..RenderRequest::fit(w, h) };
+    let expected = render(&current, &SourceInfo::default(), &settings, &RenderRequest::fit(w, h)).image;
+    let _ = render(&previous, &SourceInfo::default(), &settings, &request);
+    let actual = render(&current, &SourceInfo::default(), &settings, &request).image;
+    let (max, mean) = compare_inset(&expected, &actual, at, 0);
+    assert!(max <= 1 && mean <= 0.1, "previous photo changed Dehaze: max {max}, mean {mean:.3}");
+}
+
 // Given a huge virtual frame (48000 px: an 800 % zoom), only the window is rendered
 #[test]
 fn a_window_of_a_huge_frame_is_cheap() {

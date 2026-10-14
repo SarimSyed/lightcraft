@@ -68,7 +68,7 @@ impl Scene {
         paint::render(self.kind, self.seed, w, h)
     }
 
-    /// Render fitting within `max_edge` on the long side.
+    /// Render fitting within `max_edge` on the long side (at most the scene's own size).
     pub fn render_fit(&self, max_edge: usize) -> Rgb32f {
         let (w, h) = self.fit(max_edge);
         self.render(w, h)
@@ -205,6 +205,18 @@ mod tests {
             let mean: f32 = img.data.iter().map(|p| p[1]).sum::<f32>() / img.len() as f32;
             assert!(mean > 0.005 && mean < 3.0, "{} mean {mean}", s.name);
         }
+    }
+
+    /// Found by fuzzing catalog snapshots: a demo photo whose width read 4294967295 asked its scene
+    /// for a render that size, and the pixel buffer's size overflowed (a panic on the render
+    /// thread). A scene renders at most at its own size, which is the photo's full resolution.
+    #[test]
+    fn a_scene_renders_at_most_at_its_own_size() {
+        let mut s = demo_library().remove(0);
+        (s.width, s.height) = (40, 30);
+        let img = s.render_fit(usize::MAX);
+        assert_eq!((img.width, img.height), (40, 30));
+        assert_eq!(s.fit(20), (20, 15), "smaller sizes as asked");
     }
 
     #[test]
